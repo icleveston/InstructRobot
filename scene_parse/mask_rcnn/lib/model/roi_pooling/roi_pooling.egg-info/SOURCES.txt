@@ -1,0 +1,6 @@
+setup.py
+roi_pooling.egg-info/PKG-INFO
+roi_pooling.egg-info/SOURCES.txt
+roi_pooling.egg-info/dependency_links.txt
+roi_pooling.egg-info/top_level.txt
+src/roi_pooling_cuda.c

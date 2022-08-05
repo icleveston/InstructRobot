@@ -79,3 +79,4 @@ class Trainer:
 
 def get_trainer(opt, model, train_loader, val_loader=None):
     return Trainer(opt, model, train_loader, val_loader)
+

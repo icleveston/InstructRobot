@@ -1,10 +1,11 @@
 import os
-import sys
+import numpy as np
 import json
 import argparse
 import pickle
 import pycocotools.mask as mask_util
 import utils
+import matplotlib.pyplot as plt
 
 
 parser = argparse.ArgumentParser()
@@ -44,35 +45,45 @@ def main(args):
     for i in range(nimgs):
         obj_anns = []
         for c in range(1, ncats):
-            for j, m in enumerate(segms[c][i]):
-                if boxes[c][i][j][4] > args.score_thresh:
-                    if scenes is None: # no ground truth alignment
-                        obj_ann = {
-                            'mask': m,
-                            'image_idx': i,
-                            'category_idx': c,
-                            'feature_vector': None,
-                            'score': float(boxes[c][i][j][4]),
-                        }
-                        obj_anns.append(obj_ann)
-                    else:
-                        mask = mask_util.decode(m)
-                        for o in scenes[i]['objects']:
-                            mask_gt = mask_util.decode(o['mask'])
-                            if utils.iou(mask, mask_gt) > args.align_iou_thresh:
-                                if args.dataset == 'clevr':
-                                    vec = utils.get_feat_vec_clevr(o)
-                                else:
-                                    vec = utils.get_feat_vec_mc(o)
-                                obj_ann = {
-                                    'mask': m,
-                                    'image_idx': i,
-                                    'category_idx': c,
-                                    'feature_vector': vec,
-                                    'score': float(boxes[c][i][j][4]),
-                                }
-                                obj_anns.append(obj_ann)
-                                break
+            if len(segms[c][i]) > 0:
+                m = segms[c][i]
+                if scenes is None: # no ground truth alignment
+                    obj_ann = {
+                        'mask': m,
+                        'image_idx': i,
+                        'category_idx': c,
+                        'feature_vector': None,
+                        #'score': float(boxes[c][i][j][4]),
+                    }
+                    obj_anns.append(obj_ann)
+                else:
+                    mask = m #mask_util.decode(m)
+                    m = m.astype(np.uint8)
+                    # plt.imshow(m)
+                    # plt.show()
+                    # continue
+                    for o in scenes[i]['objects']:
+                        mask_gt = mask_util.decode(o['mask'])
+
+                        # plt.imshow(mask_gt)
+                        # plt.show()
+                        # continue
+                        if utils.iou(mask, mask_gt) > args.align_iou_thresh:
+
+
+                            if args.dataset == 'clevr':
+                                vec = utils.get_feat_vec_clevr(o)
+                            else:
+                                vec = utils.get_feat_vec_mc(o)
+                            obj_ann = {
+                                'mask': m.tolist(),
+                                'image_idx': i,
+                                'category_idx': c,
+                                'feature_vector': vec,
+                                'score': 1 #float(boxes[c][i][j][4]),
+                            }
+                            obj_anns.append(obj_ann)
+                            break
         img_anns.append(obj_anns)
         print('| processing proposals %d / %d images' % (i+1, nimgs))
 
@@ -122,3 +133,4 @@ def main(args):
 if __name__ == '__main__':
     args = parser.parse_args()
     main(args)
+

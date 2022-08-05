@@ -10,10 +10,6 @@ from config import cfg, merge_cfg_from_file, merge_cfg_from_list, assert_and_inf
 from test_engine import run_inference
 import logging_
 
-# OpenCL may be enabled by default in OpenCV3; disable it because it's not
-# thread safe and causes unwanted GPU memory allocations.
-cv2.ocl.setUseOpenCL(False)
-
 
 def parse_args():
     """Parse in command line arguments"""

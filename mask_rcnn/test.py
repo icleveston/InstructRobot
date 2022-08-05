@@ -32,11 +32,11 @@ import pycocotools.mask as mask_util
 
 from torch.autograd import Variable
 import torch
-
+import matplotlib.pyplot as plt
 from config import cfg
 from timer import Timer
 import boxes as box_utils
-# import blob as blob_utils
+import blob as blob_utils
 # import fpn as fpn_utils
 # import image as image_utils
 # import keypoints as keypoint_utils
@@ -59,10 +59,10 @@ def im_detect_all(model, im, box_proposals=None, timers=None):
 
     timers['im_detect_bbox'].tic()
     if cfg.TEST.BBOX_AUG.ENABLED:
-        scores, boxes, im_scale, blob_conv = im_detect_bbox_aug(
+        labels, boxes, im_scale, masks = im_detect_bbox_aug(
             model, im, box_proposals)
     else:
-        scores, boxes, im_scale, blob_conv = im_detect_bbox(
+        labels, boxes, im_scale, masks = im_detect_bbox(
             model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, box_proposals)
     timers['im_detect_bbox'].toc()
 
@@ -71,19 +71,19 @@ def im_detect_all(model, im, box_proposals=None, timers=None):
     # cls_boxes boxes and scores are separated by class and in the format used
     # for evaluating results
     timers['misc_bbox'].tic()
-    scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes)
+    #labels, boxes, cls_boxes = box_results_with_nms_and_limit(labels, boxes)
     timers['misc_bbox'].toc()
 
-    if cfg.MODEL.MASK_ON and boxes.shape[0] > 0:
+    if cfg.MODEL.MASK_ON and boxes.shape[0] > 0 and False:
         timers['im_detect_mask'].tic()
-        if cfg.TEST.MASK_AUG.ENABLED:
-            masks = im_detect_mask_aug(model, im, boxes, im_scale, blob_conv)
-        else:
-            masks = im_detect_mask(model, im_scale, boxes, blob_conv)
+        # if cfg.TEST.MASK_AUG.ENABLED:
+        #     masks = im_detect_mask_aug(model, im, boxes, im_scale, blob_conv)
+        # else:
+        #     masks = im_detect_mask(model, im_scale, boxes, blob_conv)
         timers['im_detect_mask'].toc()
 
         timers['misc_mask'].tic()
-        cls_segms = segm_results(cls_boxes, masks, boxes, im.shape[0], im.shape[1])
+        cls_segms = segm_results(boxes, masks, boxes, im.shape[0], im.shape[1])
         timers['misc_mask'].toc()
     else:
         cls_segms = None
@@ -102,7 +102,7 @@ def im_detect_all(model, im, box_proposals=None, timers=None):
     else:
         cls_keyps = None
 
-    return cls_boxes, cls_segms, cls_keyps
+    return (labels, boxes), (labels, masks), cls_keyps
 
 
 def im_conv_body_only(model, im, target_scale, target_max_size):
@@ -124,41 +124,46 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
 
     inputs, im_scale = _get_blobs(im, boxes, target_scale, target_max_size)
 
-    if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN:
-        v = np.array([1, 1e3, 1e6, 1e9, 1e12])
-        hashes = np.round(inputs['rois'] * cfg.DEDUP_BOXES).dot(v)
-        _, index, inv_index = np.unique(
-            hashes, return_index=True, return_inverse=True
-        )
-        inputs['rois'] = inputs['rois'][index, :]
-        boxes = boxes[index, :]
+    # if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN:
+    #     v = np.array([1, 1e3, 1e6, 1e9, 1e12])
+    #     hashes = np.round(inputs['rois'] * cfg.DEDUP_BOXES).dot(v)
+    #     _, index, inv_index = np.unique(
+    #         hashes, return_index=True, return_inverse=True
+    #     )
+    #     inputs['rois'] = inputs['rois'][index, :]
+    #     boxes = boxes[index, :]
+    #
+    # # Add multi-level rois for FPN
+    # if cfg.FPN.MULTILEVEL_ROIS and not cfg.MODEL.FASTER_RCNN:
+    #     _add_multilevel_rois_for_test(inputs, 'rois')
 
-    # Add multi-level rois for FPN
-    if cfg.FPN.MULTILEVEL_ROIS and not cfg.MODEL.FASTER_RCNN:
-        _add_multilevel_rois_for_test(inputs, 'rois')
+    inputs['data'] = torch.from_numpy(inputs['data']).cuda()
+    inputs['im_info'] = [torch.from_numpy(inputs['im_info'])]
 
-    if cfg.PYTORCH_VERSION_LESS_THAN_040:
-        inputs['data'] = [Variable(torch.from_numpy(inputs['data']), volatile=True)]
-        inputs['im_info'] = [Variable(torch.from_numpy(inputs['im_info']), volatile=True)]
-    else:
-        inputs['data'] = [torch.from_numpy(inputs['data'])]
-        inputs['im_info'] = [torch.from_numpy(inputs['im_info'])]
 
-    return_dict = model(**inputs)
+    return_dict = model(inputs['data'])
 
-    if cfg.MODEL.FASTER_RCNN:
-        rois = return_dict['rois'].data.cpu().numpy()
-        # unscale back to raw image space
-        boxes = rois[:, 1:5] / im_scale
+    # if cfg.MODEL.FASTER_RCNN:
+    #     rois = return_dict['rois'].data.cpu().numpy()
+    #     # unscale back to raw image space
+    #     boxes = rois[:, 1:5] / im_scale
 
     # cls prob (activations after softmax)
-    scores = return_dict['cls_score'].data.cpu().numpy().squeeze()
+    scores = return_dict[0]['scores'].data.cpu().numpy().squeeze()
+    labels = return_dict[0]['labels'].data.cpu().numpy().squeeze()
     # In case there is 1 proposal
     scores = scores.reshape([-1, scores.shape[-1]])
+    boxes = return_dict[0]['boxes'].data.cpu().numpy().squeeze()
+    boxes = boxes.reshape([-1, boxes.shape[-1]])
 
-    if cfg.TEST.BBOX_REG:
+    masks = return_dict[0]['masks'].data.cpu().numpy().squeeze()
+    masks[masks >= 0.5] = 1
+    masks[masks < 0.5] = 0
+    masks = masks.astype(np.uint, copy=False)
+
+    if cfg.TEST.BBOX_REG and False:
         # Apply bounding-box regression deltas
-        box_deltas = return_dict['bbox_pred'].data.cpu().numpy().squeeze()
+        box_deltas = return_dict[0]['boxes'].data.cpu().numpy().squeeze()
         # In case there is 1 proposal
         box_deltas = box_deltas.reshape([-1, box_deltas.shape[-1]])
         if cfg.MODEL.CLS_AGNOSTIC_BBOX_REG:
@@ -176,12 +181,12 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
         # Simply repeat the boxes, once for each class
         pred_boxes = np.tile(boxes, (1, scores.shape[1]))
 
-    if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN:
-        # Map scores and predictions back to the original set of boxes
-        scores = scores[inv_index, :]
-        pred_boxes = pred_boxes[inv_index, :]
+    # if cfg.DEDUP_BOXES > 0 and not cfg.MODEL.FASTER_RCNN:
+    #     # Map scores and predictions back to the original set of boxes
+    #     scores = scores[inv_index, :]
+    #     pred_boxes = pred_boxes[inv_index, :]
 
-    return scores, pred_boxes, im_scale, return_dict['blob_conv']
+    return labels, boxes, im_scale, masks
 
 
 def im_detect_bbox_aug(model, im, box_proposals=None):

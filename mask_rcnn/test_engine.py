@@ -34,10 +34,10 @@ from test import im_detect_all
 # import nn as mynn
 # from utils.detectron_weight_helper import load_detectron_weight
 import env as envu
-# import net as net_utils
+import net as net_utils
 import subprocess as subprocess_utils
-# import vis as vis_utils
-# from io import save_object
+import vis as vis_utils
+from io_utils import *
 from timer import Timer
 from clevr_dataset import *
 
@@ -78,10 +78,8 @@ def get_inference_dataset(index, is_parent=True):
     return dataset_name, proposal_file
 
 
-def run_inference(
-        args, ind_range=None,
-        multi_gpu_testing=False, gpu_id=0,
-        check_expected_results=False):
+def run_inference(args, ind_range=None, multi_gpu_testing=False, gpu_id=0, check_expected_results=False):
+
     parent_func, child_func = get_eval_functions()
     is_parent = ind_range is None
 
@@ -224,25 +222,27 @@ def test_net(
     roidb, dataset, start_ind, end_ind, total_num_images = get_roidb_and_dataset(
         dataset_name, proposal_file, ind_range
     )
+    roidb = roidb[:10]
     model = initialize_model_from_cfg(args, gpu_id=gpu_id)
     num_images = len(roidb)
     num_classes = cfg.MODEL.NUM_CLASSES
     all_boxes, all_segms, all_keyps = empty_results(num_classes, num_images)
     timers = defaultdict(Timer)
+
     for i, entry in enumerate(roidb):
-        if cfg.TEST.PRECOMPUTED_PROPOSALS:
-            # The roidb may contain ground-truth rois (for example, if the roidb
-            # comes from the training or val split). We only want to evaluate
-            # detection on the *non*-ground-truth rois. We select only the rois
-            # that have the gt_classes field set to 0, which means there's no
-            # ground truth.
-            box_proposals = entry['boxes'][entry['gt_classes'] == 0]
-            if len(box_proposals) == 0:
-                continue
-        else:
-            # Faster R-CNN type models generate proposals on-the-fly with an
-            # in-network RPN; 1-stage models don't require proposals.
-            box_proposals = None
+        # if cfg.TEST.PRECOMPUTED_PROPOSALS:
+        #     # The roidb may contain ground-truth rois (for example, if the roidb
+        #     # comes from the training or val split). We only want to evaluate
+        #     # detection on the *non*-ground-truth rois. We select only the rois
+        #     # that have the gt_classes field set to 0, which means there's no
+        #     # ground truth.
+        #     box_proposals = entry['boxes'][entry['gt_classes'] == 0]
+        #     if len(box_proposals) == 0:
+        #         continue
+        # else:
+        #     # Faster R-CNN type models generate proposals on-the-fly with an
+        #     # in-network RPN; 1-stage models don't require proposals.
+        box_proposals = None
 
         im = cv2.imread(entry['image'])
         cls_boxes_i, cls_segms_i, cls_keyps_i = im_detect_all(model, im, box_proposals, timers)
@@ -277,7 +277,7 @@ def test_net(
                 )
             )
 
-        if cfg.VIS:
+        if cfg.VIS or True:
             im_name = os.path.splitext(os.path.basename(entry['image']))[0]
             vis_utils.vis_one_image(
                 im[:, :, ::-1],
@@ -316,6 +316,9 @@ def initialize_model_from_cfg(args, gpu_id=0):
     """
     import torchvision.models.segmentation
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
+    in_features = model.roi_heads.box_predictor.cls_score.in_features
+    model.roi_heads.box_predictor = torchvision.models.detection.faster_rcnn.FastRCNNPredictor(in_features,
+                                                                                                  num_classes=cfg.MODEL.NUM_CLASSES)
     model.eval()
 
     if args.cuda:
@@ -326,12 +329,6 @@ def initialize_model_from_cfg(args, gpu_id=0):
         logger.info("loading checkpoint %s", load_name)
         checkpoint = torch.load(load_name, map_location=lambda storage, loc: storage)
         net_utils.load_ckpt(model, checkpoint['model'])
-
-    if args.load_detectron:
-        logger.info("loading detectron weights %s", args.load_detectron)
-        load_detectron_weight(model, args.load_detectron)
-
-    model = mynn.DataParallel(model, cpu_keywords=['im_info', 'roidb'], minibatch=True)
 
     return model
 
@@ -389,5 +386,8 @@ def extend_results(index, all_res, im_res):
     index.
     """
     # Skip cls_idx 0 (__background__)
-    for cls_idx in range(1, len(im_res)):
-        all_res[cls_idx][index] = im_res[cls_idx]
+    for cls_idx in range(len(all_res)):
+
+        for i, c in enumerate(im_res[0]):
+            if cls_idx == c:
+                all_res[cls_idx][index] = im_res[1][i]

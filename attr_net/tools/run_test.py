@@ -1,13 +1,12 @@
 import os
 import json
-
 from options import get_options
-from datasets import get_dataloader
+from clevr_object import get_dataloader
 from model import get_model
 import utils
 
 
-COMP_CAT_DICT_PATH = 'tools/clevr_comp_cat_dict.json'
+COMP_CAT_DICT_PATH = 'clevr_comp_cat_dict.json'
 
 
 opt = get_options('test')
@@ -49,3 +48,4 @@ print('| saving annotation file to %s' % opt.output_path)
 utils.mkdirs(os.path.dirname(opt.output_path))
 with open(opt.output_path, 'w') as fout:
     json.dump(output, fout)
+

@@ -115,3 +115,4 @@ class _Net(nn.Module):
 def get_model(opt):
     model = AttributeNetwork(opt)
     return model
+

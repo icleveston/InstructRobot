@@ -5,7 +5,6 @@ import argparse
 import pickle
 import pycocotools.mask as mask_util
 import utils
-import matplotlib.pyplot as plt
 
 
 parser = argparse.ArgumentParser()
@@ -70,7 +69,6 @@ def main(args):
                         # continue
                         if utils.iou(mask, mask_gt) > args.align_iou_thresh:
 
-
                             if args.dataset == 'clevr':
                                 vec = utils.get_feat_vec_clevr(o)
                             else:
@@ -114,10 +112,12 @@ def main(args):
     img_ids = [o['image_idx'] for o in all_objs]
     cat_ids = [o['category_idx'] for o in all_objs]
     scores = [o['score'] for o in all_objs]
+
     if scenes is not None:
         feat_vecs = [o['feature_vector'] for o in all_objs]
     else:
         feat_vecs = []
+
     output = {
         'object_masks': obj_masks,
         'image_idxs': img_ids,
@@ -125,7 +125,9 @@ def main(args):
         'feature_vectors': feat_vecs,
         'scores': scores,
     }
+
     print('| saving object annotations to %s' % args.output_path)
+
     with open(args.output_path, 'w') as fout:
         json.dump(output, fout)
 

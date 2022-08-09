@@ -26,3 +26,4 @@ class BaseRNN(nn.Module):
 
     def forward(self, *args, **kwargs):
         raise NotImplementedError()
+

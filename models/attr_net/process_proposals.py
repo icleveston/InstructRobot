@@ -5,6 +5,7 @@ import argparse
 import pickle
 import pycocotools.mask as mask_util
 import utils
+import base64
 
 
 parser = argparse.ArgumentParser()
@@ -56,8 +57,9 @@ def main(args):
                     }
                     obj_anns.append(obj_ann)
                 else:
-                    mask = m #mask_util.decode(m)
-                    m = m.astype(np.uint8)
+
+                    mask = mask_util.decode(m)
+                    mask = mask.astype(np.uint8)
                     # plt.imshow(m)
                     # plt.show()
                     # continue
@@ -74,7 +76,7 @@ def main(args):
                             else:
                                 vec = utils.get_feat_vec_mc(o)
                             obj_ann = {
-                                'mask': m.tolist(),
+                                'mask': mask_util.encode(np.asfortranarray(mask)),
                                 'image_idx': i,
                                 'category_idx': c,
                                 'feature_vector': vec,
@@ -128,8 +130,8 @@ def main(args):
 
     print('| saving object annotations to %s' % args.output_path)
 
-    with open(args.output_path, 'w') as fout:
-        json.dump(output, fout)
+    with open(args.output_path, 'wb') as fout:
+        pickle.dump(output, fout, pickle.HIGHEST_PROTOCOL)
 
 
 if __name__ == '__main__':

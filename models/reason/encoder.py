@@ -1,5 +1,5 @@
 import torch.nn as nn
-from .base_rnn import BaseRNN
+from base_rnn import BaseRNN
 
 
 class Encoder(BaseRNN):
@@ -21,7 +21,7 @@ class Encoder(BaseRNN):
         if fix_embedding:
             self.embedding.weight.requires_grad = False
         self.rnn = self.rnn_cell(self.word_vec_dim, hidden_size, n_layers, 
-                                 batch_first=True, bidirectional=bidirectional, dropout=dropout_p)
+                                 batch_first=True, bidirectional=bool(bidirectional), dropout=dropout_p)
 
     def forward(self, input_var, input_lengths=None):
         """

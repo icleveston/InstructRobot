@@ -1,6 +1,17 @@
 import random
 import json
-import utils.utils as utils
+import utils as utils
+
+def get_executor(opt):
+    print('| creating %s executor' % opt.dataset)
+    if opt.dataset == 'clevr':
+        train_scene_json = opt.clevr_train_scene_path
+        val_scene_json = opt.clevr_val_scene_path
+        vocab_json = opt.clevr_vocab_path
+    else:
+        raise ValueError('Invalid dataset')
+    executor = ClevrExecutor(train_scene_json, val_scene_json, vocab_json)
+    return executor
 
 
 CLEVR_COLORS = ['blue', 'brown', 'cyan', 'gray', 'green', 'purple', 'red', 'yellow']
@@ -469,3 +480,4 @@ class ClevrExecutor:
         if type(scene) == list and len(scene) > 0:
             return scene[0]
         return 'error'
+

@@ -1,6 +1,5 @@
 import os
-import json
-
+import pickle
 import numpy as np
 import cv2
 import torch
@@ -37,8 +36,8 @@ class ClevrObjectDataset(Dataset):
 
     def __init__(self, obj_ann_path, img_dir, split, 
                  min_img_id=None, max_img_id=None, concat_img=True):
-        with open(obj_ann_path) as f:
-            anns = json.load(f)
+        with open(obj_ann_path, 'rb') as f:
+            anns = pickle.load(f)
 
         # search for the object id range corresponding to the image split
         min_id = 0
@@ -79,7 +78,7 @@ class ClevrObjectDataset(Dataset):
         img_id = self.img_ids[idx]
         cat_id = self.cat_ids[idx]
         
-        mask = torch.Tensor(self.obj_masks[idx])
+        mask = torch.Tensor(mask_util.decode(self.obj_masks[idx]))
         seg = img.clone()
         for i in range(3):
             seg[i, :, :] = img[i, :, :] * mask.float()

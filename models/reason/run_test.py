@@ -1,11 +1,10 @@
 import os
 import json
-
-from options.test_options import TestOptions
-from datasets import get_dataloader
-from executors import get_executor
-from models.parser import Seq2seqParser
-import utils.utils as utils
+from test_options import TestOptions
+from clevr_questions import get_dataloader
+from clevr_executor import get_executor
+from parser_reason import Seq2seqParser
+import utils as utils
 
 
 def find_clevr_question_type(out_mod):

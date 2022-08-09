@@ -33,7 +33,7 @@ from test import im_detect_all
 # from modeling import model_builder
 # import nn as mynn
 # from utils.detectron_weight_helper import load_detectron_weight
-import env as envu
+import pycocotools.mask as mask_util
 import net as net_utils
 import subprocess as subprocess_utils
 import vis as vis_utils
@@ -222,7 +222,7 @@ def test_net(
     roidb, dataset, start_ind, end_ind, total_num_images = get_roidb_and_dataset(
         dataset_name, proposal_file, ind_range
     )
-    roidb = roidb[:10]
+    roidb = roidb
     model = initialize_model_from_cfg(args, gpu_id=gpu_id)
     num_images = len(roidb)
     num_classes = cfg.MODEL.NUM_CLASSES
@@ -249,7 +249,7 @@ def test_net(
 
         extend_results(i, all_boxes, cls_boxes_i)
         if cls_segms_i is not None:
-            extend_results(i, all_segms, cls_segms_i)
+            extend_results_masks(i, all_segms, cls_segms_i)
         if cls_keyps_i is not None:
             extend_results(i, all_keyps, cls_keyps_i)
 
@@ -267,17 +267,13 @@ def test_net(
                 timers['misc_mask'].average_time +
                 timers['misc_keypoints'].average_time
             )
-            logger.info(
-                (
-                    'im_detect: range [{:d}, {:d}] of {:d}: '
-                    '{:d}/{:d} {:.3f}s + {:.3f}s (eta: {})'
-                ).format(
+            logger.info(('im_detect: range [{:d}, {:d}] of {:d}: {:d}/{:d} {:.3f}s + {:.3f}s (eta: {})').format(
                     start_ind + 1, end_ind, total_num_images, start_ind + i + 1,
                     start_ind + num_images, det_time, misc_time, eta
                 )
             )
 
-        if cfg.VIS or True:
+        if cfg.VIS:
             im_name = os.path.splitext(os.path.basename(entry['image']))[0]
             vis_utils.vis_one_image(
                 im[:, :, ::-1],
@@ -391,3 +387,14 @@ def extend_results(index, all_res, im_res):
         for i, c in enumerate(im_res[0]):
             if cls_idx == c:
                 all_res[cls_idx][index] = im_res[1][i]
+
+def extend_results_masks(index, all_res, im_res):
+    """Add results for an image to the set of all results at the specified
+    index.
+    """
+    # Skip cls_idx 0 (__background__)
+    for cls_idx in range(len(all_res)):
+
+        for i, c in enumerate(im_res[0]):
+            if cls_idx == c:
+                all_res[cls_idx][index] = mask_util.encode(np.asfortranarray(im_res[1][i]))

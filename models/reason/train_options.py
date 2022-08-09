@@ -1,4 +1,4 @@
-from .base_options import BaseOptions
+from base_options import BaseOptions
 
 
 class TrainOptions(BaseOptions):
@@ -41,3 +41,4 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--visualize_training', default=0, type=int, help='visualize training with tensorboard')
 
         self.is_train = True
+

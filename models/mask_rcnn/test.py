@@ -159,7 +159,7 @@ def im_detect_bbox(model, im, target_scale, target_max_size, boxes=None):
     masks = return_dict[0]['masks'].data.cpu().numpy().squeeze()
     masks[masks >= 0.5] = 1
     masks[masks < 0.5] = 0
-    masks = masks.astype(np.uint, copy=False)
+    masks = masks.astype(np.uint8, copy=False)
 
     if cfg.TEST.BBOX_REG and False:
         # Apply bounding-box regression deltas

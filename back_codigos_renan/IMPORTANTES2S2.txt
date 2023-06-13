@@ -1,0 +1,16 @@
+conectar na neuron criando uma portfoward; ou seja, a porta 22 mapeará para  a sua 9000
+ssh renan@143.106.23.200 -p 9696 -L localhost:9911:localhost:80 -X
+senha: samuellindo123
+
+Copia a pasta naovrepenv para o seu home na neuron
+scp -P 9000 -r naovrepenv/ renan@localhost:~/ # copia naovrepenv para a neuron
+scp -P 9000 -r renan@localhost:~/naovrepenv/data . # Copia data da neuron pra pasta atual
+
+rodar o vrep na neuron (ir até a pasta do Vrep, dentro de um screen)
+screen
+xvfb-run --auto-servernum --server-num=1 -s "-screen 0 1024x768x24" ./vrep.sh -h ~/naovrepenv/Scenes/CenarioV1.3.6.5.ttt > /dev/null 
+control a + d para sair do screen 
+screen -r para voltar para o screen
+screen -ls lista todas as screens
+screen -S 23536 -X quit mata a screen com pid 23536
+

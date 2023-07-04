@@ -1,5 +1,4 @@
 import os
-import glob
 import time
 from datetime import datetime
 
@@ -9,11 +8,10 @@ import numpy as np
 import gym
 #import roboschool
 
-from ppo import PPO
+from Agent.ppo import PPO
 
-from envs import NAOCuboidEnv
+from Environment.Environment import NAOCuboidEnv
 
-from utils import denormalize_action
 import wandb
 
 ################################### Training ###################################
@@ -63,7 +61,7 @@ def train():
     print("training environment name : " + env_name)
 
     if env_name == "NAO_env":
-        scene_file = 'Scenes/scene_NAO_PPO_Baseline_Cuboid.ttt'
+        scene_file = 'Scenes/Main.ttt'
         env = NAOCuboidEnv(scene_file, not_open_vrep=True)
         action_dim = 26
         state_dim = 172

@@ -1,14 +1,18 @@
 from pyrep.backend import sim
+from pyrep.robots.arms.nao_arm import NAOLeftArm, NAORightArm
+from pyrep.robots.end_effectors.nao_hand import NAOHand
 import numpy as np
 import math
 
 
 class Nao:
-    def __init__(self, left_arm, right_arm, hand_left, hand_right):
-        self.leftArm = left_arm
-        self.rightArm = right_arm
-        self.leftHand = hand_left
-        self.rightHand = hand_right
+    def __init__(self):
+
+        self.leftArm = NAOLeftArm()
+        self.rightArm = NAORightArm()
+        self.leftHand = NAOHand()
+        self.rightHand = NAOHand()
+
         self.leftArm.set_control_loop_enabled(False)
         self.rightArm.set_control_loop_enabled(False)
         self.leftHand.set_control_loop_enabled(False)
@@ -17,12 +21,13 @@ class Nao:
         self.rightArm.set_motor_locked_at_zero_velocity(True)
         self.leftHand.set_motor_locked_at_zero_velocity(True)
         self.rightHand.set_motor_locked_at_zero_velocity(True)
+
         self.left_tips, self.right_tips = self.get_hand_tip()
         (
-          self.leftArm.initial_joints_positions,
-          self.leftHand.initial_joints_positions,
-          self.rightArm.initial_joints_positions,
-          self.rightHand.initial_joints_positions
+            self.leftArm.initial_joints_positions,
+            self.leftHand.initial_joints_positions,
+            self.rightArm.initial_joints_positions,
+            self.rightHand.initial_joints_positions
         ) = self.get_joint_positions()
 
         joint_limits = {

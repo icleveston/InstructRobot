@@ -61,3 +61,4 @@ torchvision~=0.15.2
 yaml~=0.2.5
 prettytable~=3.5.0
 pandas~=1.5.3
+torchtext~=0.15.2

@@ -15,9 +15,11 @@ from Environment import Environment
 from Environment.CubeSimpleSet import CubeSimpleSet
 from PIL import Image, ImageFont, ImageDraw
 from torchvision import transforms
-
-
+from torchtext.data import get_tokenizer
+from torchtext.vocab import build_vocab_from_iterator
 torch.set_printoptions(threshold=10_000)
+
+
 torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=False)
 
 
@@ -32,8 +34,8 @@ class Main:
         self.scene_file = 'Scenes/Cubes_Simple.ttt'
         self.instruction_set = CubeSimpleSet()
         self.n_steps = 3E6
-        self.n_rollout = 3
-        self.n_trajectory = 128
+        self.n_rollout = 2
+        self.n_trajectory = 3
         self.current_step = 0
         self.lr = 1e-5
         self.action_dim = 26
@@ -51,6 +53,10 @@ class Main:
         self.loss_path = None
         self.checkpoint_path = None
         self.output_path = None
+
+        # Create tokenizer and vocab
+        self.tokenizer = get_tokenizer("basic_english")
+        self.vocab = self._build_vocab(self.instruction_set)
 
         # Set the seed
         torch.manual_seed(self.random_seed)
@@ -97,6 +103,9 @@ class Main:
 
         # Count the number of the model parameters
         self._count_parameters()
+
+        # Compute image mean and std
+        self.mean, self.std = self._compute_mean_std()
 
     def train(self, resume=None):
 
@@ -172,7 +181,7 @@ class Main:
                 wandb.log(
                     {
                         "charts/mean_episodic_return": mean_episodic_return,
-                        "charts/loss": loss,
+                        "charts/loss":  loss,
                         "video": wandb.Video(self._format_video_wandb(last_obs_rollout), fps=8)
                     }, step=self.current_step)
 
@@ -209,11 +218,6 @@ class Main:
         # For each rollout
         for r, _ in enumerate(range(self.n_rollout)):
 
-            reward_array = []
-            state_array = []
-            action_array = []
-            logprob_array = []
-
             # Get the first observation
             old_observation = self.env.reset()
 
@@ -223,16 +227,20 @@ class Main:
                 if r == self.n_rollout-1:
                     last_obs_rollout.append(old_observation.copy())
 
-                instruction = old_observation[-1][0]
+                # Tokenize instruction
+                instruction_token = self.tokenizer(old_observation[-1][0])
+
+                # Get instructions indexes
+                instruction_index = torch.tensor(self.vocab(instruction_token), device=self.device)
 
                 # Compose the transformations
                 trans = transforms.Compose([
                     transforms.ToTensor(),
-                    transforms.Resize((256, 128))
-                    # transforms.Normalize([0.4561], [0.3082])
+                    transforms.Resize((256, 128)),
+                    transforms.Normalize(self.mean, self.std)
                 ])
 
-                image_tensor = torch.zeros((len(old_observation), 3, 256, 256))
+                image_tensor = torch.empty((len(old_observation), 3, 256, 256), dtype=torch.float, device=self.device)
 
                 for i, o in enumerate(old_observation):
                     image_top = o[1]
@@ -247,30 +255,29 @@ class Main:
 
                     image_tensor[i] = images_stacked
 
-                state = image_tensor.flatten(0, 1)
+                image = image_tensor.flatten(0, 1)
+
+                # Build state
+                state = (instruction_index, image)
 
                 # Select action from the agent
                 action, logprob = self.agent.select_action(state)
 
                 # Execute action in the simulator
-                new_observation, reward = self.env.step(action)
+                new_observation, reward = self.env.step(action.squeeze())
 
-                state_array.append(state)
-                action_array.append(action)
-                logprob_array.append(logprob)
-                reward_array.append(reward)
+                # Save rollout to memory
+                self.memory.rewards.append(reward)
+                self.memory.states.append(state)
+                self.memory.actions.append(action.squeeze())
+                self.memory.logprobs.append(logprob.squeeze())
+                self.memory.is_terminals.append(j == self.n_trajectory-1)
 
                 # Update observation
                 old_observation = new_observation
 
-            # Save rollout to memory
-            self.memory.rewards.append(reward_array)
-            self.memory.states.append(state_array)
-            self.memory.actions.append(action_array)
-            self.memory.logprobs.append(logprob_array)
-
         # Compute the mean episodic return
-        mean_episodic_return = sum([sum(r) for r in self.memory.rewards])/len(self.memory.rewards)
+        mean_episodic_return = sum(self.memory.rewards)/len(self.memory.rewards)
 
         # Update the weights
         loss = self.agent.update(self.memory)
@@ -278,7 +285,18 @@ class Main:
         # Clear the memory
         self.memory.clear_memory()
 
-        return mean_episodic_return, loss, last_obs_rollout
+        return mean_episodic_return, loss.cpu().data.numpy(), last_obs_rollout
+
+    def _build_vocab(self, instruction_set):
+
+        def build_vocab(dataset: []):
+            for instruction, _ in dataset:
+                yield self.tokenizer(instruction)
+
+        vocab = build_vocab_from_iterator(build_vocab(instruction_set), specials=["<UNK>"])
+        vocab.set_default_index(vocab["<UNK>"])
+
+        return vocab
 
     @torch.no_grad()
     def test(self, model_name):
@@ -529,6 +547,68 @@ class Main:
         video = np.transpose(video, (0, 3, 1, 2))
 
         return video
+
+    def _compute_mean_std(self, n_images_computation=12):
+
+        obs = self.env.reset()
+
+        images = []
+
+        # Compose the transformations
+        trans = transforms.Compose([
+            transforms.ToTensor(),
+        ])
+
+        image_tensor = torch.empty((len(obs)*n_images_computation, 3, 512, 2048), dtype=torch.float)
+
+        index = 0
+
+        for _ in range(n_images_computation):
+
+            action = [random.randrange(-1, 1) for _ in range(26)]
+
+            obs, _ = self.env.step(action)
+
+            for o in obs:
+                image_top = o[1]
+                image_front = o[2]
+
+                # Convert state to tensor
+                image_top_tensor = trans(image_top)
+                image_font_tensor = trans(image_front)
+
+                # Cat all images into a single one
+                images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)
+
+                image_tensor[index] = images_stacked
+
+                index += 1
+
+        return online_mean_and_sd(images)
+
+
+def online_mean_and_sd(dataset):
+    """Compute the mean and sd in an online fashion
+
+        Var[x] = E[X^2] - E^2[X]
+    """
+    cnt = 0
+    fst_moment = torch.empty(3)
+    snd_moment = torch.empty(3)
+
+    for images in dataset:
+
+        b, c, h, w = images.shape
+        nb_pixels = b * h * w
+        sum_ = torch.sum(images, dim=[0, 2, 3])
+        sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
+        fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
+        snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
+
+        cnt += nb_pixels
+
+    return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)
+
 
 def parse_arguments():
     arg = argparse.ArgumentParser()

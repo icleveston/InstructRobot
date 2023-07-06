@@ -25,32 +25,49 @@ class Agent:
         self.MseLoss = nn.MSELoss()
 
     def select_action(self, state):
-        return self.policy_old.act(state)
+
+        state_instruction = state[0]
+        state_vision = state[1]
+
+        state_instruction = state_instruction.unsqueeze(dim=0)
+        state_vision = state_vision.unsqueeze(dim=0)
+
+        return self.policy_old.act(state_instruction, state_vision)
 
     def update(self, memory):
-        memory.rewards = [torch.tensor(r, dtype=torch.float) for r in memory.rewards]
 
-        rewards = torch.stack(memory.rewards).to(self.device)
+        rewards = []
+        discounted_reward = 0
+        for reward, is_terminal in zip(reversed(memory.rewards), reversed(memory.is_terminals)):
+            if is_terminal:
+                discounted_reward = 0
+            discounted_reward = reward + (self.gamma * discounted_reward)
+            rewards.insert(0, discounted_reward)
 
-        memory.states = [torch.stack(s) for s in memory.states]
-        memory.actions = [torch.stack(a) for a in memory.actions]
-        memory.logprobs = [torch.stack(l) for l in memory.logprobs]
+        # Normalizing the rewards
+        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
-        old_states = torch.stack(memory.states).to(self.device).detach()
-        old_actions = torch.stack(memory.actions).to(self.device).detach()
-        old_logprobs = torch.stack(memory.logprobs).to(self.device).detach()
+        # Convert list to tensor
+        old_actions = torch.squeeze(torch.stack(memory.actions, dim=0)).detach().to(self.device)
+        old_logprobs = torch.squeeze(torch.stack(memory.logprobs, dim=0)).detach().to(self.device)
 
-        rewards = rewards.transpose(0, 1)
-        old_states = old_states.transpose(0, 1)
-        old_actions = old_actions.transpose(0, 1)
-        old_logprobs = old_logprobs.transpose(0, 1)
+        # Separate states
+        state_instruction = []
+        state_vision = []
+        for s in memory.states:
+            state_instruction.append(s[0])
+            state_vision.append(s[1])
+
+        old_instruction_states = torch.squeeze(torch.stack(state_instruction, dim=0)).detach().to(self.device)
+        old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
 
         loss = 0
 
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
             # Evaluating old actions and values :
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states, old_vision_states, old_actions)
 
             # Finding the ratio (pi_theta / pi_theta__old):
             ratios = torch.exp(logprobs - old_logprobs.detach())
@@ -60,19 +77,17 @@ class Agent:
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
 
-            loss_rl = (-torch.min(surr1, surr2) - 0.01 * dist_entropy).sum(dim=0).mean()
-
-            loss = loss_rl + 0.5 * self.MseLoss(state_values, rewards)
+            loss = -torch.min(surr1, surr2) - 0.01 * dist_entropy + 0.5 * self.MseLoss(state_values, rewards)
 
             # take gradient step
             self.optimizer.zero_grad()
-            loss.backward()
+            loss.mean().backward()
             self.optimizer.step()
 
         # Copy new weights into old policy:
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-        return loss
+        return loss.mean()
 
 
 class Memory:
@@ -88,6 +103,7 @@ class Memory:
         del self.states[:]
         del self.logprobs[:]
         del self.rewards[:]
+        del self.is_terminals[:]
 
 
 class ActorCritic(nn.Module):
@@ -96,24 +112,27 @@ class ActorCritic(nn.Module):
 
         self.device = device
 
+        self.actor_vision = ConvNet(12, 250)
+        self.actor_instruction = Transformer()
+
         self.actor = nn.Sequential(
-            ConvNet(12, 512),
             nn.Tanh(),
-            nn.Linear(512, 256),
+            nn.Linear(500, 256),
             nn.Tanh(),
-            nn.Linear(256, 32),
+            nn.Linear(256, 128),
             nn.Tanh(),
-            nn.Linear(32, action_dim),
+            nn.Linear(128, action_dim),
         )
 
+        self.critic_vision = ConvNet(12, 250)
+        self.critic_instruction = Transformer()
+
         self.critic = nn.Sequential(
-            ConvNet(12, 512),
+            nn.Linear(500, 256),
             nn.Tanh(),
-            nn.Linear(512, 256),
+            nn.Linear(256, 128),
             nn.Tanh(),
-            nn.Linear(256, 32),
-            nn.Tanh(),
-            nn.Linear(32, 1)
+            nn.Linear(128, 1)
         )
 
         self.action_var = torch.full((action_dim,), action_std * action_std).to(self.device)
@@ -121,8 +140,14 @@ class ActorCritic(nn.Module):
     def forward(self):
         raise NotImplementedError
 
-    def act(self, state):
-        action_mean = self.actor(state)
+    def act(self, state_instruction, state_vision):
+
+        x_instruction = self.actor_instruction(state_instruction)
+        x_vision = self.actor_vision(state_vision)
+
+        x = torch.cat((x_instruction, x_vision), dim=1)
+
+        action_mean = self.actor(x)
         cov_mat = torch.diag(self.action_var).to(self.device)
 
         dist = MultivariateNormal(action_mean, cov_mat)
@@ -131,8 +156,14 @@ class ActorCritic(nn.Module):
 
         return action.detach(), action_logprob
 
-    def evaluate(self, state, action):
-        action_mean = self.actor(state)
+    def evaluate(self, state_instruction, state_vision, action):
+
+        x_instruction_actor = self.actor_instruction(state_instruction)
+        x_vision_actor = self.actor_vision(state_vision)
+
+        x_actor = torch.cat((x_instruction_actor, x_vision_actor), dim=1)
+
+        action_mean = self.actor(x_actor)
 
         action_var = self.action_var.expand_as(action_mean).to(self.device)
         cov_mat = torch.diag_embed(action_var).to(self.device)
@@ -141,7 +172,13 @@ class ActorCritic(nn.Module):
 
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
-        state_value = self.critic(state)
+
+        x_instruction_critic = self.critic_instruction(state_instruction)
+        x_vision_critic = self.critic_vision(state_vision)
+
+        x_critic = torch.cat((x_instruction_critic, x_vision_critic), dim=1)
+
+        state_value = self.critic(x_critic)
 
         return action_logprobs, torch.squeeze(state_value), dist_entropy
 
@@ -160,9 +197,9 @@ class ConvNet(nn.Module):
         self.relu2 = nn.ReLU()
         self.maxpool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-        self.fc1 = nn.Linear(in_features=3721, out_features=500)
+        self.fc1 = nn.Linear(in_features=186050, out_features=512)
         self.relu3 = nn.ReLU()
-        self.fc2 = nn.Linear(in_features=500, out_features=num_output)
+        self.fc2 = nn.Linear(in_features=512, out_features=num_output)
 
     def forward(self, x):
         # pass the input through our first set of CONV => RELU =>
@@ -180,7 +217,26 @@ class ConvNet(nn.Module):
         x = torch.flatten(x, 1)
         x = self.fc1(x)
         x = self.relu3(x)
+        x = self.fc2(x)
 
-        output = self.fc2(x)
+        return x
 
-        return output
+
+class Transformer(nn.Module):
+    def __init__(self, vocab_size=10, d_model=50, nhead=2, num_layers=3):
+        super(Transformer, self).__init__()
+
+        self.embedding = nn.Embedding(vocab_size, d_model)
+
+        encoder_layer = nn.TransformerEncoderLayer(d_model, nhead)
+        encoder_norm = nn.LayerNorm(d_model)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers, encoder_norm)
+
+    def forward(self, x):
+        x = self.embedding(x)
+        x = self.transformer_encoder(x)
+
+        x = x.view(x.shape[0], -1)
+
+        return x
+

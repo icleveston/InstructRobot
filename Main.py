@@ -34,8 +34,8 @@ class Main:
         self.scene_file = 'Scenes/Cubes_Simple.ttt'
         self.instruction_set = CubeSimpleSet()
         self.n_steps = 3E6
-        self.n_rollout = 2
-        self.n_trajectory = 3
+        self.n_rollout = 32
+        self.n_trajectory = 128
         self.current_step = 0
         self.lr = 1e-5
         self.action_dim = 26
@@ -548,7 +548,7 @@ class Main:
 
         return video
 
-    def _compute_mean_std(self, n_images_computation=12):
+    def _compute_mean_std(self, n_observations_computation=5):
 
         obs = self.env.reset()
 
@@ -559,11 +559,11 @@ class Main:
             transforms.ToTensor(),
         ])
 
-        image_tensor = torch.empty((len(obs)*n_images_computation, 3, 512, 2048), dtype=torch.float)
+        image_tensor = torch.empty((len(obs)*n_observations_computation, 3, 512, 2048), dtype=torch.float)
 
         index = 0
 
-        for _ in range(n_images_computation):
+        for _ in range(n_observations_computation):
 
             action = [random.randrange(-1, 1) for _ in range(26)]
 
@@ -584,28 +584,23 @@ class Main:
 
                 index += 1
 
-        return online_mean_and_sd(images)
+        return online_mean_and_sd(image_tensor)
 
 
-def online_mean_and_sd(dataset):
-    """Compute the mean and sd in an online fashion
+def online_mean_and_sd(images):
 
-        Var[x] = E[X^2] - E^2[X]
-    """
     cnt = 0
     fst_moment = torch.empty(3)
     snd_moment = torch.empty(3)
 
-    for images in dataset:
+    b, c, h, w = images.shape
+    nb_pixels = b * h * w
+    sum_ = torch.sum(images, dim=[0, 2, 3])
+    sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
+    fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
+    snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
 
-        b, c, h, w = images.shape
-        nb_pixels = b * h * w
-        sum_ = torch.sum(images, dim=[0, 2, 3])
-        sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
-        fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
-        snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
-
-        cnt += nb_pixels
+    cnt += nb_pixels
 
     return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)
 

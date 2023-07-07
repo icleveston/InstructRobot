@@ -107,7 +107,14 @@ class Main:
         self._count_parameters()
 
         # Compute image mean and std
-        self.mean, self.std = self._compute_mean_std()
+        mean, std = self._compute_mean_std()
+
+        # Compose the transformations
+        self.trans = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize((128, 64)),
+            transforms.Normalize(mean, std)
+        ])
 
     def train(self, resume=None):
 
@@ -235,22 +242,15 @@ class Main:
                 # Get instructions indexes
                 instruction_index = torch.tensor(self.vocab(instruction_token), device=self.device)
 
-                # Compose the transformations
-                trans = transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Resize((256, 128)),
-                    transforms.Normalize(self.mean, self.std)
-                ])
-
-                image_tensor = torch.empty((len(old_observation), 3, 256, 256), dtype=torch.float, device=self.device)
+                image_tensor = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
 
                 for i, o in enumerate(old_observation):
                     image_top = o[1]
                     image_front = o[2]
 
                     # Convert state to tensor
-                    image_top_tensor = trans(image_top)
-                    image_font_tensor = trans(image_front)
+                    image_top_tensor = self.trans(image_top)
+                    image_font_tensor = self.trans(image_front)
 
                     # Cat all images into a single one
                     images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)

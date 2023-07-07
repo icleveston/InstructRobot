@@ -197,7 +197,7 @@ class ConvNet(nn.Module):
         self.relu2 = nn.ReLU()
         self.maxpool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-        self.fc1 = nn.Linear(in_features=44652, out_features=256)
+        self.fc1 = nn.Linear(in_features=10092, out_features=256)
         self.relu3 = nn.ReLU()
         self.fc2 = nn.Linear(in_features=256, out_features=num_output)
 

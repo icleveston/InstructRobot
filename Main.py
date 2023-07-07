@@ -36,8 +36,8 @@ class Main:
         self.scene_file = 'Scenes/Cubes_Simple.ttt'
         self.instruction_set = CubeSimpleSet()
         self.n_steps = 3E6
-        self.n_rollout = 32
-        self.n_trajectory = 128
+        self.n_rollout = 2
+        self.n_trajectory = 6
         self.current_step = 0
         self.lr = 1e-5
         self.action_dim = 26

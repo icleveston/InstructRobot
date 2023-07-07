@@ -188,18 +188,18 @@ class ConvNet(nn.Module):
         super(ConvNet, self).__init__()
 
         # initialize first set of CONV => RELU => POOL layers
-        self.conv1 = nn.Conv2d(in_channels=num_channels, out_channels=20, kernel_size=(5, 5))
+        self.conv1 = nn.Conv2d(in_channels=num_channels, out_channels=12, kernel_size=(5, 5))
         self.relu1 = nn.ReLU()
         self.maxpool1 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
         # initialize second set of CONV => RELU => POOL layers
-        self.conv2 = nn.Conv2d(in_channels=20, out_channels=50, kernel_size=(5, 5))
+        self.conv2 = nn.Conv2d(in_channels=12, out_channels=12, kernel_size=(5, 5))
         self.relu2 = nn.ReLU()
         self.maxpool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-        self.fc1 = nn.Linear(in_features=186050, out_features=512)
+        self.fc1 = nn.Linear(in_features=44652, out_features=256)
         self.relu3 = nn.ReLU()
-        self.fc2 = nn.Linear(in_features=512, out_features=num_output)
+        self.fc2 = nn.Linear(in_features=256, out_features=num_output)
 
     def forward(self, x):
         # pass the input through our first set of CONV => RELU =>

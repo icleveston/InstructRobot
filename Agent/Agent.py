@@ -70,7 +70,7 @@ class Agent:
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states, old_vision_states, old_actions)
 
             # Finding the ratio (pi_theta / pi_theta__old):
-            ratios = torch.exp(logprobs - old_logprobs.detach())
+            ratios = torch.exp(logprobs - old_logprobs)
 
             # Finding Surrogate Loss:
             advantages = rewards - state_values.detach()
@@ -151,7 +151,7 @@ class ActorCritic(nn.Module):
         cov_mat = torch.diag(self.action_var).to(self.device)
 
         dist = MultivariateNormal(action_mean, cov_mat)
-        action = dist.rsample()
+        action = dist.sample()
         action_logprob = dist.log_prob(action)
 
         return action.detach(), action_logprob

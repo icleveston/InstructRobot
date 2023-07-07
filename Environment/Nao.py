@@ -13,10 +13,6 @@ class Nao:
         self.leftHand = NAOHand()
         self.rightHand = NAOHand()
 
-        self.leftArm.set_control_loop_enabled(False)
-        self.rightArm.set_control_loop_enabled(False)
-        self.leftHand.set_control_loop_enabled(False)
-        self.rightHand.set_control_loop_enabled(False)
         self.leftArm.set_motor_locked_at_zero_velocity(True)
         self.rightArm.set_motor_locked_at_zero_velocity(True)
         self.leftHand.set_motor_locked_at_zero_velocity(True)

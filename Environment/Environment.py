@@ -22,8 +22,7 @@ class Environment:
         self._instruction_set = instruction_set
         self._change_inst_step = _change_inst_step
         self._stack_obs = stack_obs
-
-        random.seed(random_seed)
+        self.random_seed = random_seed
 
         self.pr = PyRep()
         self.pr.launch(scene_file, headless=headless)
@@ -38,6 +37,9 @@ class Environment:
         self.cam_front = VisionSensor('Vision_Front')
 
     def start(self):
+
+        # Set seed
+        random.seed(self.random_seed)
 
         # Start simulation
         self.pr.start()

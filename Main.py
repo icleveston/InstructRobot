@@ -529,19 +529,25 @@ class Main:
 
     def _format_video_wandb(self, last_obs_rollout) -> np.array:
 
+        trans = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize((128, 256)),
+            transforms.ToPILImage(),
+        ])
+
         video = []
 
-        font = ImageFont.truetype("Roboto/Roboto-Medium.ttf", size=25)
+        font = ImageFont.truetype("Roboto/Roboto-Medium.ttf", size=10)
 
         for index, o in enumerate(last_obs_rollout):
 
-            image_array = np.concatenate((o[-1][1], o[-1][2]), axis=0)
+            image_array = np.concatenate((trans(o[-1][1]), trans(o[-1][2])), axis=0)
 
             image = Image.fromarray(image_array, mode="RGB")
 
             image_editable = ImageDraw.Draw(image)
 
-            image_editable.text((15, 480), o[-1][0], (0, 0, 0), align="center", font=font)
+            image_editable.text((10, 115), o[-1][0], (0, 0, 0), align="center", font=font)
 
             video.append(np.asarray(image))
 

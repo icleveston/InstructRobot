@@ -14,3 +14,4 @@ screen -r para voltar para o screen
 screen -ls lista todas as screens
 screen -S 23536 -X quit mata a screen com pid 23536
 
+sudo apt-get install '^libxcb.*-dev' libx11-xcb-dev libglu1-mesa-dev libxrender-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev

@@ -1,22 +1,24 @@
-import os
-import random
-import time
-import shutil
-import pickle
 import argparse
-import pandas as pd
+import os
+import pickle
+import random
+import shutil
+import time
+
 import numpy as np
+import pandas as pd
 import torch
-import wandb
-from tqdm import tqdm
-from Agent import Agent, Memory
-from prettytable import PrettyTable
-from Environment import Environment
-from Environment.CubeSimpleSet import CubeSimpleSet
 from PIL import Image, ImageFont, ImageDraw
-from torchvision import transforms
+from prettytable import PrettyTable
 from torchtext.data import get_tokenizer
 from torchtext.vocab import build_vocab_from_iterator
+from torchvision import transforms
+from tqdm import tqdm
+import wandb
+from Agent import Agent, Memory
+from Environment import Environment
+from Environment.CubeSimpleSet import CubeSimpleSet
+
 torch.set_printoptions(threshold=10_000)
 
 

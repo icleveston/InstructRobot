@@ -10,22 +10,59 @@ import pandas as pd
 import torch
 from PIL import Image, ImageFont, ImageDraw
 from prettytable import PrettyTable
-from torchtext.data import get_tokenizer
-from torchtext.vocab import build_vocab_from_iterator
 from torchvision import transforms
 from tqdm import tqdm
 import wandb
 from Agent import Agent, Memory
 from Environment import Environment
 from Environment.CubeSimpleSet import CubeSimpleSet
+from multiprocessing import Process, JoinableQueue
 
 torch.set_printoptions(threshold=10_000)
-
-
 torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=False)
 
 
 def percentage_error_formula(x, amount_variation): round(x / amount_variation * 100, 3)
+
+
+def _create_env(queues: (), n_steps, n_rollout, n_trajectory, scene, instruction_set, trans_mean_std, random_seed):
+    in_queue, out_queue = queues
+
+    # Create the environment
+    env = Environment(
+        scene_file=scene,
+        instruction_set=instruction_set,
+        trans_mean_std=trans_mean_std,
+        random_seed=random_seed
+    )
+
+    current_step = 0
+
+    while current_step < n_steps:
+
+        for _ in range(n_rollout):
+
+            current_step += n_trajectory * n_rollout
+
+            # Reset environment
+            data = env.reset()
+
+            # Return first observation
+            out_queue.put(data)
+
+            out_queue.join()
+
+            for _ in range(n_trajectory):
+                # Wait for action from main process
+                action = in_queue.get()
+                in_queue.task_done()
+
+                # Execute step
+                data = env.step(action)
+
+                # Return obs and reward to main process
+                out_queue.put(data)
+                out_queue.join()
 
 
 class Main:
@@ -36,7 +73,7 @@ class Main:
         self.scene_file = 'Scenes/Cubes_Simple.ttt'
         self.instruction_set = CubeSimpleSet()
         self.n_steps = 3E6
-        self.n_rollout = 24
+        self.n_rollout = 16
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-5
@@ -55,10 +92,6 @@ class Main:
         self.loss_path = None
         self.checkpoint_path = None
         self.output_path = None
-
-        # Create tokenizer and vocab
-        self.tokenizer = get_tokenizer("basic_english")
-        self.vocab = self._build_vocab(self.instruction_set)
 
         # Set the seed
         torch.manual_seed(self.random_seed)
@@ -95,26 +128,30 @@ class Main:
         # Build the agent's memory
         self.memory = Memory()
 
-        # Build the environment
-        self.env = Environment(
-            scene_file=self.scene_file,
-            headless=True,
-            instruction_set=self.instruction_set,
-            random_seed=self.random_seed
-        )
-
         # Count the number of the model parameters
         self._count_parameters()
 
-        # Compute image mean and std
-        mean, std = self._compute_mean_std()
+        # Create queues
+        self.in_queues = [JoinableQueue() for _ in range(self.n_rollout)]
+        self.out_queues = [JoinableQueue() for _ in range(self.n_rollout)]
 
-        # Compose the transformations
-        self.trans = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Resize((128, 64)),
-            transforms.Normalize(mean, std)
-        ])
+        # Compute image mean and std
+        #self._compute_mean_std()
+        trans_mean_std = ([0.8517414331, 0.8405256271, 0.8349498510], [0.1922473758, 0.2080573738, 0.2201343030])
+
+        # Create processes
+        self.processes = [Process(target=_create_env, args=(q,
+                                                            self.n_steps,
+                                                            self.n_rollout,
+                                                            self.n_trajectory,
+                                                            self.scene_file,
+                                                            self.instruction_set,
+                                                            trans_mean_std,
+                                                            self.random_seed)) for q in zip(self.in_queues,
+                                                                                            self.out_queues)]
+
+        # Start processes
+        [p.start() for p in self.processes]
 
     def train(self, resume=None):
 
@@ -167,7 +204,6 @@ class Main:
         with tqdm(total=self.n_steps) as pbar:
 
             while self.current_step < self.n_steps:
-
                 # Train one rollout
                 mean_episodic_return, loss, last_obs_rollout = self._train_one_rollout()
 
@@ -190,7 +226,7 @@ class Main:
                 wandb.log(
                     {
                         "charts/mean_episodic_return": mean_episodic_return,
-                        "charts/loss":  loss,
+                        "charts/loss": loss,
                         "video": wandb.Video(self._format_video_wandb(last_obs_rollout), fps=8)
                     }, step=self.current_step)
 
@@ -211,6 +247,9 @@ class Main:
                 with open(os.path.join(self.loss_path, f"loss_step_{self.current_step}.p"), "wb") as f:
                     pickle.dump((mean_episodic_return, loss, last_obs_rollout), f)
 
+        # Wait all process to finish
+        [p.join() for p in self.processes]
+
         toc = time.time()
 
         self.elapsed_time = toc - tic
@@ -224,62 +263,53 @@ class Main:
 
         last_obs_rollout = []
 
-        # For each rollout
-        for r, _ in enumerate(range(self.n_rollout)):
+        old_states_array = []
+        training_data_array = []
 
-            # Get the first observation
-            old_observation = self.env.reset()
+        # Get first observations
+        for o in self.out_queues:
+            old_state, training_data = o.get()
+            old_states_array.append(old_state)
+            training_data_array.append(training_data)
+            o.task_done()
 
-            for j in range(self.n_trajectory):
+        # For each trajectory
+        for t, _ in enumerate(range(self.n_trajectory)):
 
-                # Save observations for the last rollout
-                if r == self.n_rollout-1:
-                    last_obs_rollout.append(old_observation.copy())
+            # Save observations for the last rollout
+            last_obs_rollout.append(training_data_array[-1])
 
-                # Tokenize instruction
-                instruction_token = self.tokenizer(old_observation[-1][0])
+            # Select action from the agent
+            actions, logprobs = self.agent.select_action(old_states_array)
 
-                # Get instructions indexes
-                instruction_index = torch.tensor(self.vocab(instruction_token), device=self.device)
+            # Send actions to environments
+            for in_index, in_q in enumerate(self.in_queues):
+                in_q.put(actions[in_index].cpu().data.numpy().tolist())
+                in_q.join()
 
-                image_tensor = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
+            rewards = []
+            new_states_array = []
 
-                for i, o in enumerate(old_observation):
-                    image_top = o[1]
-                    image_front = o[2]
+            # Get states from environments
+            for out_q in self.out_queues:
+                new_state, reward, training_data = out_q.get()
+                out_q.task_done()
+                rewards.append(reward)
+                new_states_array.append(new_state)
+                training_data_array.append(training_data)
 
-                    # Convert state to tensor
-                    image_top_tensor = self.trans(image_top)
-                    image_font_tensor = self.trans(image_front)
+            # Save rollout to memory
+            self.memory.rewards += rewards
+            self.memory.states += old_states_array
+            self.memory.actions += actions
+            self.memory.logprobs += logprobs
+            self.memory.is_terminals += [0 if i != self.n_trajectory-1 else 1 for i in range(self.n_trajectory)]
 
-                    # Cat all images into a single one
-                    images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)
-
-                    image_tensor[i] = images_stacked
-
-                image = image_tensor.flatten(0, 1)
-
-                # Build state
-                state = (instruction_index, image)
-
-                # Select action from the agent
-                action, logprob = self.agent.select_action(state)
-
-                # Execute action in the simulator
-                new_observation, reward = self.env.step(action.squeeze())
-
-                # Save rollout to memory
-                self.memory.rewards.append(reward)
-                self.memory.states.append(state)
-                self.memory.actions.append(action.squeeze())
-                self.memory.logprobs.append(logprob.squeeze())
-                self.memory.is_terminals.append(j == self.n_trajectory-1)
-
-                # Update observation
-                old_observation = new_observation
+            # Update state
+            old_states_array = old_states_array
 
         # Compute the mean episodic return
-        mean_episodic_return = sum(self.memory.rewards)/len(self.memory.rewards)
+        mean_episodic_return = sum(self.memory.rewards) / len(self.memory.rewards)
 
         # Update the weights
         loss = self.agent.update(self.memory)
@@ -288,17 +318,6 @@ class Main:
         self.memory.clear_memory()
 
         return mean_episodic_return, loss.cpu().data.numpy(), last_obs_rollout
-
-    def _build_vocab(self, instruction_set):
-
-        def build_vocab(dataset: []):
-            for instruction, _ in dataset:
-                yield self.tokenizer(instruction)
-
-        vocab = build_vocab_from_iterator(build_vocab(instruction_set), specials=["<UNK>"])
-        vocab.set_default_index(vocab["<UNK>"])
-
-        return vocab
 
     @torch.no_grad()
     def test(self, model_name):
@@ -448,7 +467,6 @@ class Main:
         # ])
 
         for index in range(128):
-
             action = [random.randrange(-3, 3) for i in range(26)]
 
             obs, _ = self.env.step(action)
@@ -558,9 +576,14 @@ class Main:
 
     def _compute_mean_std(self, n_observations_computation=5):
 
-        obs = self.env.reset()
+        # Create the environment
+        env = Environment(
+            scene_file=self.scene_file,
+            instruction_set=self.instruction_set,
+            random_seed=self.random_seed
+        )
 
-        images = []
+        _, obs = env.reset()
 
         # Compose the transformations
         trans = transforms.Compose([
@@ -575,7 +598,7 @@ class Main:
 
             action = [random.randrange(-1, 1) for _ in range(26)]
 
-            obs, _ = self.env.step(action)
+            _, _, obs = env.step(action)
 
             for o in obs:
                 image_top = o[1]
@@ -592,11 +615,12 @@ class Main:
 
                 index += 1
 
-        return online_mean_and_sd(image_tensor)
+        env.close()
+
+        print(online_mean_and_sd(image_tensor))
 
 
 def online_mean_and_sd(images):
-
     cnt = 0
     fst_moment = torch.empty(3)
     snd_moment = torch.empty(3)
@@ -633,5 +657,4 @@ if __name__ == "__main__":
         main.test(args['test'])
     else:
         main.train(args['resume'])
-        #main._visualize_observations()
-
+        # main._visualize_observations()

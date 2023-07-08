@@ -24,13 +24,16 @@ class Agent:
 
         self.MseLoss = nn.MSELoss()
 
-    def select_action(self, state):
+    def select_action(self, states):
 
-        state_instruction = state[0]
-        state_vision = state[1]
+        state_instruction = []
+        state_vision = []
+        for s in states:
+            state_instruction.append(s[0])
+            state_vision.append(s[1])
 
-        state_instruction = state_instruction.unsqueeze(dim=0)
-        state_vision = state_vision.unsqueeze(dim=0)
+        state_instruction = torch.stack(state_instruction)
+        state_vision = torch.stack(state_vision)
 
         return self.policy_old.act(state_instruction, state_vision)
 

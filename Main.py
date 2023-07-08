@@ -244,8 +244,8 @@ class Main:
                 }, is_best)
 
                 # Dump the training data
-                with open(os.path.join(self.loss_path, f"loss_step_{self.current_step}.p"), "wb") as f:
-                    pickle.dump((mean_episodic_return, loss, last_obs_rollout), f)
+                # with open(os.path.join(self.loss_path, f"loss_step_{self.current_step}.p"), "wb") as f:
+                #   pickle.dump((mean_episodic_return, loss, last_obs_rollout), f)
 
         # Wait all process to finish
         [p.join() for p in self.processes]
@@ -497,12 +497,12 @@ class Main:
         ckpt_path = os.path.join(self.checkpoint_path, "checkpoint.tar")
 
         # Save the checkpoint
-        torch.save(state, ckpt_path)
+        #torch.save(state, ckpt_path)
 
         # Save the best model
-        if is_best:
+        #if is_best:
             # Copy the checkpoint to the best model
-            shutil.copyfile(ckpt_path, os.path.join(self.checkpoint_path, "best_model.tar"))
+        #    shutil.copyfile(ckpt_path, os.path.join(self.checkpoint_path, "best_model.tar"))
 
     def _load_checkpoint(self, best=False):
 

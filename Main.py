@@ -208,8 +208,8 @@ class Main:
                 }, is_best)
 
                 # Dump the training data
-                with open(os.path.join(self.loss_path, f"loss_step_{self.current_step}.p"), "wb") as f:
-                    pickle.dump((mean_episodic_return, loss, last_obs_rollout), f)
+                #with open(os.path.join(self.loss_path, f"loss_step_{self.current_step}.p"), "wb") as f:
+                #    pickle.dump((mean_episodic_return, loss, last_obs_rollout), f)
 
         toc = time.time()
 

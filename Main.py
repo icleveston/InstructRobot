@@ -73,7 +73,7 @@ class Main:
         self.scene_file = 'Scenes/Cubes_Simple.ttt'
         self.instruction_set = CubeSimpleSet()
         self.n_steps = 3E6
-        self.n_rollout = 4
+        self.n_rollout = 24
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-5
@@ -242,10 +242,6 @@ class Main:
                     "model_state": self.agent.policy.state_dict(),
                     "optim_state": self.agent.optimizer.state_dict(),
                 }, is_best)
-
-                # Dump the training data
-                # with open(os.path.join(self.loss_path, f"loss_step_{self.current_step}.p"), "wb") as f:
-                #   pickle.dump((mean_episodic_return, loss, last_obs_rollout), f)
 
         # Wait all process to finish
         [p.join() for p in self.processes]

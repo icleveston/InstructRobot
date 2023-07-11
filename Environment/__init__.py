@@ -1,2 +1,2 @@
 from .Environment import Environment
-from .Environment import InstructionSet
+from .Environment import Conf

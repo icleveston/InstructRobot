@@ -17,10 +17,11 @@ from tqdm import tqdm
 import wandb
 from Agent import Agent, Memory
 from Environment import Environment
-from Environment.CubeSimpleSet import CubeSimpleSet
 from multiprocessing import Process, JoinableQueue
+from Environment.CubeSimpleConf import CubeSimpleConf
 
 torch.set_printoptions(threshold=10_000)
+
 torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=False)
 
 
@@ -67,16 +68,70 @@ def _create_env(queues: (), n_steps, n_rollout, n_trajectory, scene, instruction
                 out_queue.join()
 
 
+def online_mean_and_sd(images):
+    cnt = 0
+    fst_moment = torch.empty(3)
+    snd_moment = torch.empty(3)
+
+    b, c, h, w = images.shape
+    nb_pixels = b * h * w
+    sum_ = torch.sum(images, dim=[0, 2, 3])
+    sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
+    fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
+    snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
+
+    cnt += nb_pixels
+
+    return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)
+
+
+def parse_arguments():
+    arg = argparse.ArgumentParser()
+    arg.add_argument("--test", type=str, required=False, help="should train or test")
+    arg.add_argument("--resume", type=str, required=False, help="should resume the train")
+
+    args = vars(arg.parse_args())
+
+    return args
+
+
+def _format_video_wandb(last_obs_rollout) -> np.array:
+    trans = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize((128, 256)),
+        transforms.ToPILImage(),
+    ])
+
+    video = []
+
+    font = ImageFont.truetype("Roboto/Roboto-Medium.ttf", size=10)
+
+    for index, o in enumerate(last_obs_rollout):
+        image_array = np.concatenate((trans(o[-1][1]), trans(o[-1][2])), axis=0)
+
+        image = Image.fromarray(image_array, mode="RGB")
+
+        image_editable = ImageDraw.Draw(image)
+
+        image_editable.text((10, 115), o[-1][0], (0, 0, 0), align="center", font=font)
+
+        video.append(np.asarray(image))
+
+    video = np.asarray(video)
+    video = np.transpose(video, (0, 3, 1, 2))
+
+    return video
+
+
 class Main:
 
     def __init__(self):
 
         # Training params
-        self.scene_file = 'Scenes/Cubes_Simple.ttt'
-        self.instruction_set = CubeSimpleSet()
+        self.conf = CubeSimpleConf()
         self.n_steps = 3E6
-        self.n_rollout = 24
-        self.n_trajectory = 32
+        self.n_rollout = 1
+        self.n_trajectory = 3
         self.current_step = 0
         self.lr = 1e-5
         self.action_dim = 26
@@ -98,7 +153,7 @@ class Main:
 
         # Create tokenizer and vocab
         self.tokenizer = get_tokenizer("basic_english")
-        self.vocab = self._build_vocab(self.instruction_set)
+        self.vocab = self._build_vocab(self.conf.instruction_set)
 
         # Set the seed
         torch.manual_seed(self.random_seed)
@@ -169,7 +224,7 @@ class Main:
             folder_time = time.strftime("%Y_%m_%d_%H_%M_%S")
 
             # Set the model name
-            model_name = f"exec_{self.instruction_set}_{folder_time}"
+            model_name = f"{self.conf}_{folder_time}"
 
             # Set the folders
             self.output_path = os.path.join('out', model_name)
@@ -203,7 +258,7 @@ class Main:
 
         # Init Wandb
         wandb.init(
-            project=str(self.instruction_set),
+            project=str(self.conf),
             name=model_name,
             id=model_name
         )
@@ -238,7 +293,7 @@ class Main:
                     {
                         "charts/mean_episodic_return": mean_episodic_return,
                         "charts/loss": loss,
-                        "video": wandb.Video(self._format_video_wandb(last_obs_rollout), fps=8)
+                        "video": wandb.Video(_format_video_wandb(last_obs_rollout), fps=8)
                     }, step=self.current_step)
 
                 # Check if it is the best model
@@ -340,150 +395,19 @@ class Main:
 
     @torch.no_grad()
     def test(self, model_name):
-        pass
 
-    #
-    #     # Set the model to load
-    #     self.model_name = model_name
-    #
-    #     # Set the folders
-    #     self.output_path = os.path.join('out', self.model_name, 'results', str(test_seq))
-    #     self.checkpoint_path = os.path.join('out', self.model_name, 'checkpoint')
-    #
-    #     if not os.path.exists(self.output_path):
-    #         os.makedirs(self.output_path)
-    #
-    #     # Load the model
-    #     self._load_checkpoint(best=False)
-    #
-    #     # Print the model info
-    #     print(f"[*] Total Trainable Params: {self.num_parameters}")
-    #
-    #     mse_all = []
-    #     samples = []
-    #
-    #     predictions_array = torch.tensor([]).to(self.device)
-    #     y_array = torch.tensor([]).to(self.device)
-    #     l_t_array_all = torch.tensor([]).to(self.device)
-    #
-    #     print(f"[*] Test on {self.num_test} samples")
-    #
-    #     loss_mse = torch.nn.MSELoss()
-    #
-    #     starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-    #     repetitions = len(self.test_loader)
-    #     timings = np.zeros((repetitions, 1))
-    #
-    #     for i, (x, y) in enumerate(self.test_loader):
-    #
-    #         glimpse_location = []
-    #
-    #         # Set data to the respected device
-    #         x, y = x.to(self.device), y.to(self.device)
-    #
-    #         # Generate the context for the first image
-    #         h_t_0 = torch.zeros(self.batch_size, 1024).to(self.device)
-    #         h_t_1 = torch.zeros(self.batch_size, 1024).to(self.device)
-    #
-    #         # Initialize the latent space for each new mini batch
-    #         self.model.core.hidden_cell = (
-    #             torch.stack((h_t_0, h_t_1)), torch.zeros(2, self.batch_size, 1024).to(self.device))
-    #
-    #         predicted = None
-    #
-    #         starter.record()
-    #
-    #         for t in range(self.num_glimpses):
-    #             # Running policy_old:
-    #             l_t = self.ppo.select_action(h_t_1.detach(), self.memory)
-    #
-    #             # Store the glimpse location for both frames
-    #             glimpse_location.append(l_t)
-    #
-    #             # Call the model and pass the minibatch
-    #             h_t_0, h_t_1, predicted = self.model(x, l_t)
-    #
-    #         ender.record()
-    #         torch.cuda.synchronize()
-    #         curr_time = starter.elapsed_time(ender)
-    #         timings[i] = curr_time
-    #
-    #         predictions_array = torch.cat((predictions_array, predicted))
-    #         y_array = torch.cat((y_array, y))
-    #         l_t_array_all = torch.cat((l_t_array_all, torch.stack(glimpse_location)), axis=1)
-    #
-    #         self.memory.clear_memory()
-    #
-    #         # For the first minibatch
-    #         if i == 0:
-    #             trans = transforms.Compose([
-    #                 NormalizeInverse([0.4209265411], [0.2889825404]),
-    #                 transforms.ToPILImage()
-    #             ])
-    #
-    #             # Build the glimpses array
-    #             glimpses = [trans(x[0, 0].cpu()), trans(x[0, 1].cpu()),
-    #                         torch.stack(glimpse_location)[:, 0].cpu().data.numpy()]
-    #
-    #             # Dump the glimpses
-    #             with open(os.path.join(self.output_path, f"glimpses_epoch_test.p"), "wb") as f:
-    #                 pickle.dump(glimpses, f)
-    #
-    #     mean_syn = np.sum(timings) / repetitions
-    #     std_syn = np.std(timings)
-    #     print(mean_syn)
-    #
-    #     # Dump the glimpses for heatmap
-    #     with open(os.path.join(self.output_path, f"glimpses_heatmap.p"), "wb") as f:
-    #         pickle.dump(l_t_array_all, f)
-    #
-    #     # Get samples every 20 frames
-    #     skip = len(y_array) // 20
-    #
-    #     # Save the first prediction
-    #     samples = [[h.cpu().numpy(), p.cpu().numpy()] for h, p in zip(y_array[::skip], predictions_array[::skip])]
-    #
-    #     # Compute the metrics
-    #     y_rot = y_array[:, :3]
-    #     y_tran = y_array[:, 3:]
-    #     pred_rot = predictions_array[:, :3]
-    #     pred_tran = predictions_array[:, 3:]
-    #
-    #     # Compute losses for differentiable modules
-    #     rot_loss = loss_mse(pred_rot, y_rot)
-    #     trans_loss = loss_mse(pred_tran, y_tran)
-    #
-    #     regressor_loss = rot_loss + trans_loss
-    #
-    #     # Save the results as image
-    #     self._save_results(regressor_loss.item(), rot_loss.item(), trans_loss.item(), samples, glimpses)
-    #
-    #     mean = torch.tensor(
-    #         [-7.6397992e-05, 2.6872402e-04, 4.7161593e-06, -9.7197731e-04, -1.7675826e-02, 9.2309231e-01]).to(
-    #         self.device)
-    #     std = torch.tensor([0.00305257, 0.01770405, 0.00267268, 0.02503707, 0.01716818, 0.30884704]).to(self.device)
-    #
-    #     # Denormalize gt
-    #     std_inv = 1 / (std + 1e-8)
-    #     mean_inv = -mean * std_inv
-    #
-    #     y_array = (y_array - mean_inv) / std_inv
-    #     predictions_array = (predictions_array - mean_inv) / std_inv
-    #
-    #     predictions_array = predictions_array.cpu().data.numpy()
-    #     y_array = y_array.cpu().data.numpy()
-    #
-    #     # Generate the trajectory and metrics
-    #     self._save_evaluation(predictions_array, dataset)
+        # Set the folders
+        self.output_path = os.path.join('out', model_name)
+        self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
+        self.loss_path = os.path.join(self.output_path, 'loss')
+        self.images_path = os.path.join(self.output_path, 'images')
+
+        # Load the model
+        self._load_checkpoint(best=False)
 
     def _visualize_observations(self, obs: [] = None):
 
         obs = self.env.reset()
-
-        # transinv = transforms.Compose([
-        #     NormalizeInverse([0.4561], [0.3082]),
-        #     transforms.ToPILImage()
-        # ])
 
         for index in range(128):
             action = [random.randrange(-3, 3) for i in range(26)]
@@ -516,12 +440,12 @@ class Main:
         ckpt_path = os.path.join(self.checkpoint_path, "checkpoint.tar")
 
         # Save the checkpoint
-        #torch.save(state, ckpt_path)
+        torch.save(state, ckpt_path)
 
         # Save the best model
-        #if is_best:
+        if is_best:
             # Copy the checkpoint to the best model
-        #    shutil.copyfile(ckpt_path, os.path.join(self.checkpoint_path, "best_model.tar"))
+            shutil.copyfile(ckpt_path, os.path.join(self.checkpoint_path, "best_model.tar"))
 
     def _load_checkpoint(self, best=False):
 
@@ -564,35 +488,6 @@ class Main:
         # Save
         df.to_csv(f"{self.output_path}/config.csv")
 
-    def _format_video_wandb(self, last_obs_rollout) -> np.array:
-
-        trans = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Resize((128, 256)),
-            transforms.ToPILImage(),
-        ])
-
-        video = []
-
-        font = ImageFont.truetype("Roboto/Roboto-Medium.ttf", size=10)
-
-        for index, o in enumerate(last_obs_rollout):
-
-            image_array = np.concatenate((trans(o[-1][1]), trans(o[-1][2])), axis=0)
-
-            image = Image.fromarray(image_array, mode="RGB")
-
-            image_editable = ImageDraw.Draw(image)
-
-            image_editable.text((10, 115), o[-1][0], (0, 0, 0), align="center", font=font)
-
-            video.append(np.asarray(image))
-
-        video = np.asarray(video)
-        video = np.transpose(video, (0, 3, 1, 2))
-
-        return video
-
     def _compute_mean_std(self, n_observations_computation=5):
 
         # Create the environment
@@ -609,7 +504,7 @@ class Main:
             transforms.ToTensor(),
         ])
 
-        image_tensor = torch.empty((len(obs)*n_observations_computation, 3, 512, 2048), dtype=torch.float)
+        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 512, 2048), dtype=torch.float)
 
         index = 0
 

@@ -8,15 +8,14 @@ import numpy as np
 from .Nao import Nao
 from pyrep.objects.vision_sensor import VisionSensor
 from collections import deque
-from Environment import InstructionSet
+from Environment import Conf
 
 
 class Environment:
 
     def __init__(
         self,
-        scene_file: str,
-        instruction_set: InstructionSet,
+        conf: Conf,
         trans_mean_std=None,
         headless: bool = True,
         _change_inst_step: int = 1000,
@@ -24,13 +23,14 @@ class Environment:
         random_seed: int = 1
     ):
 
-        self._instruction_set = instruction_set
+        self._conf = conf
+        self._instruction_set = conf.instruction_set
         self._change_inst_step = _change_inst_step
         self._stack_obs = stack_obs
         self.random_seed = random_seed
 
         self.pr = PyRep()
-        self.pr.launch(scene_file, headless=headless)
+        self.pr.launch(conf.scene_file, headless=headless)
 
         self.NAO = None
         self.instruction = None
@@ -62,6 +62,9 @@ class Environment:
 
         # Set seed
         random.seed(self.random_seed)
+
+        # Configure init scene
+        self._conf.configure()
 
         # Start simulation
         self.pr.start()

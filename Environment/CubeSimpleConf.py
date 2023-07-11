@@ -1,11 +1,13 @@
 from .Nao import Nao
-from .InstructionSet import InstructionSet
+from .Conf import Conf
 from pyrep.backend import sim
 
 
-class CubeSimpleSet(InstructionSet):
+class CubeSimpleConf(Conf):
 
     def __init__(self):
+
+        scene_file = 'Scenes/Cubes_Simple.ttt'
 
         instructions_set = (
             ("Touch the blue cube.", self._touch_blue_cube),
@@ -13,11 +15,14 @@ class CubeSimpleSet(InstructionSet):
             ("Touch the green cube.", self._touch_green_cube),
         )
 
-        super().__init__("CubeSimpleSet", instructions_set)
+        super().__init__("CubeSimpleSet", scene_file, instructions_set)
 
         self.cube_green_handle = None
         self.cube_red_handle = None
         self.cube_blue_handle = None
+
+    def configure(self):
+        pass
 
     def _get_handles(self):
         self.cube_green_handle = sim.simGetObjectHandle("Cube_Green")

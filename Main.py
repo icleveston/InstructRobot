@@ -4,12 +4,14 @@ import pickle
 import random
 import shutil
 import time
-
+from csv import writer
 import numpy as np
 import pandas as pd
 import torch
 from PIL import Image, ImageFont, ImageDraw
 from prettytable import PrettyTable
+from torchtext.data import get_tokenizer
+from torchtext.vocab import build_vocab_from_iterator
 from torchvision import transforms
 from tqdm import tqdm
 import wandb
@@ -89,9 +91,14 @@ class Main:
         self.best_mean_episodic_return = 0
         self.elapsed_time = 0
         self.num_parameters = 0
+        self.output_path = None
         self.loss_path = None
         self.checkpoint_path = None
-        self.output_path = None
+        self.images_path = None
+
+        # Create tokenizer and vocab
+        self.tokenizer = get_tokenizer("basic_english")
+        self.vocab = self._build_vocab(self.instruction_set)
 
         # Set the seed
         torch.manual_seed(self.random_seed)
@@ -168,6 +175,7 @@ class Main:
             self.output_path = os.path.join('out', model_name)
             self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
             self.loss_path = os.path.join(self.output_path, 'loss')
+            self.images_path = os.path.join(self.output_path, 'images')
 
             # Create the folders
             if not os.path.exists(self.output_path):
@@ -176,6 +184,8 @@ class Main:
                 os.makedirs(self.checkpoint_path)
             if not os.path.exists(self.loss_path):
                 os.makedirs(self.loss_path)
+            if not os.path.exists(self.images_path):
+                os.makedirs(self.images_path)
 
         else:
 
@@ -186,6 +196,7 @@ class Main:
             self.output_path = os.path.join('out', model_name)
             self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
             self.loss_path = os.path.join(self.output_path, 'loss')
+            self.images_path = os.path.join(self.output_path, 'images')
 
             # Load the model
             self._load_checkpoint(best=False)
@@ -242,6 +253,18 @@ class Main:
                     "model_state": self.agent.policy.state_dict(),
                     "optim_state": self.agent.optimizer.state_dict(),
                 }, is_best)
+
+                # Dump the last observation data
+                with open(os.path.join(self.images_path, f"last_observation.p"), "wb") as f:
+                    pickle.dump(last_obs_rollout, f)
+
+                row = [loss, mean_episodic_return]
+
+                # Save training history
+                with open(os.path.join(self.loss_path, 'history.csv'), 'a') as f_object:
+                    writer_object = writer(f_object)
+                    writer_object.writerow(row)
+                    f_object.close()
 
         # Wait all process to finish
         [p.join() for p in self.processes]

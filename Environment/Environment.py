@@ -58,13 +58,13 @@ class Environment:
                 transforms.Resize((128, 64))
             ])
 
-    def start(self):
-
         # Set seed
         random.seed(self.random_seed)
 
         # Configure init scene
         self._conf.configure()
+
+    def start(self):
 
         # Start simulation
         self.pr.start()

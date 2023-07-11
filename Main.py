@@ -271,7 +271,7 @@ class Main:
 
             while self.current_step < self.n_steps:
                 # Train one rollout
-                mean_episodic_return, loss, last_obs_rollout = self._train_one_rollout()
+                mean_episodic_return, loss, obs_rollout = self._train_one_rollout()
 
                 self.current_step += self.n_trajectory * self.n_rollout
 
@@ -293,7 +293,7 @@ class Main:
                     {
                         "charts/mean_episodic_return": mean_episodic_return,
                         "charts/loss": loss,
-                        "video": wandb.Video(_format_video_wandb(last_obs_rollout), fps=8)
+                        "video": wandb.Video(_format_video_wandb(obs_rollout), fps=8)
                     }, step=self.current_step)
 
                 # Check if it is the best model
@@ -309,9 +309,9 @@ class Main:
                     "optim_state": self.agent.optimizer.state_dict(),
                 }, is_best)
 
-                # Dump the last observation data
-                with open(os.path.join(self.images_path, f"last_observation.p"), "wb") as f:
-                    pickle.dump(last_obs_rollout, f)
+                # Dump observation data
+                with open(os.path.join(self.images_path, f"observation.p"), "wb") as f:
+                    pickle.dump(obs_rollout, f)
 
                 row = [loss, mean_episodic_return]
 
@@ -335,7 +335,10 @@ class Main:
 
         self.agent.policy.train()
 
-        last_obs_rollout = []
+        obs_rollout = []
+
+        # Random a rollout to sample
+        random_sample_index = random.randint(0, self.n_rollout - 1)
 
         old_states_array = []
         training_data_array = []
@@ -351,7 +354,7 @@ class Main:
         for t, _ in enumerate(range(self.n_trajectory)):
 
             # Save observations for the last rollout
-            last_obs_rollout.append(training_data_array[-1])
+            obs_rollout.append(training_data_array[random_sample_index])
 
             # Select action from the agent
             actions, logprobs = self.agent.select_action(old_states_array)
@@ -391,7 +394,7 @@ class Main:
         # Clear the memory
         self.memory.clear_memory()
 
-        return mean_episodic_return, loss.cpu().data.numpy(), last_obs_rollout
+        return mean_episodic_return, loss.cpu().data.numpy(), obs_rollout
 
     @torch.no_grad()
     def test(self, model_name):

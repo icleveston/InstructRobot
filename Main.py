@@ -89,8 +89,8 @@ class Main:
         # Training params
         self.conf = CubeSimpleConf()
         self.n_steps = 3E6
-        self.n_rollout = 1
-        self.n_trajectory = 3
+        self.n_rollout = 24
+        self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-5
         self.action_dim = 26
@@ -225,7 +225,7 @@ class Main:
 
             while self.current_step < self.n_steps:
                 # Train one rollout
-                mean_episodic_return, loss, last_obs_rollout = self._train_one_rollout()
+                mean_episodic_return, loss, obs_rollout = self._train_one_rollout()
 
                 self.current_step += self.n_trajectory * self.n_rollout
 
@@ -247,7 +247,7 @@ class Main:
                     {
                         "charts/mean_episodic_return": mean_episodic_return,
                         "charts/loss": loss,
-                        "video": wandb.Video(_format_video_wandb(last_obs_rollout), fps=8)
+                        "video": wandb.Video(_format_video_wandb(obs_rollout), fps=8)
                     }, step=self.current_step)
 
                 # Check if it is the best model
@@ -263,9 +263,9 @@ class Main:
                     "optim_state": self.agent.optimizer.state_dict(),
                 }, is_best)
 
-                # Dump the last observation data
-                with open(os.path.join(self.images_path, f"last_observation.p"), "wb") as f:
-                    pickle.dump(last_obs_rollout, f)
+                # Dump observation data
+                with open(os.path.join(self.images_path, f"observation.p"), "wb") as f:
+                    pickle.dump(obs_rollout, f)
 
                 row = [loss, mean_episodic_return]
 
@@ -286,7 +286,10 @@ class Main:
 
         self.agent.policy.train()
 
-        last_obs_rollout = []
+        obs_rollout = []
+
+        # Random a rollout to sample
+        random_sample_index = random.randint(0, self.n_rollout - 1)
 
         # For each rollout
         for r, _ in enumerate(range(self.n_rollout)):
@@ -296,9 +299,9 @@ class Main:
 
             for j in range(self.n_trajectory):
 
-                # Save observations for the last rollout
-                if r == self.n_rollout - 1:
-                    last_obs_rollout.append(old_observation.copy())
+                # Save observations
+                if r == random_sample_index:
+                    obs_rollout.append(old_observation.copy())
 
                 # Tokenize instruction
                 instruction_token = self.tokenizer(old_observation[-1][0])
@@ -351,7 +354,7 @@ class Main:
         # Clear the memory
         self.memory.clear_memory()
 
-        return mean_episodic_return, loss.cpu().data.numpy(), last_obs_rollout
+        return mean_episodic_return, loss.cpu().data.numpy(), obs_rollout
 
     def _build_vocab(self, instruction_set):
 

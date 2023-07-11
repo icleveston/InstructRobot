@@ -36,13 +36,13 @@ class Environment:
         self.cam_top = VisionSensor('Vision_Top')
         self.cam_front = VisionSensor('Vision_Front')
 
-    def start(self):
-
         # Set seed
         random.seed(self.random_seed)
 
         # Configure init scene
         self._conf.configure()
+
+    def start(self):
 
         # Start simulation
         self.pr.start()

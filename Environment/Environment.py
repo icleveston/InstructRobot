@@ -24,10 +24,9 @@ class Environment:
     ):
 
         self._conf = conf
-        self._instruction_set = conf.instruction_set
         self._change_inst_step = _change_inst_step
         self._stack_obs = stack_obs
-        self.random_seed = random_seed
+        self._random_seed = random_seed
 
         self.pr = PyRep()
         self.pr.launch(conf.scene_file, headless=headless)
@@ -43,7 +42,7 @@ class Environment:
 
         # Create tokenizer and vocab
         self.tokenizer = get_tokenizer("basic_english")
-        self.vocab = self._build_vocab(self._instruction_set)
+        self.vocab = self._build_vocab(self._conf.instruction_set)
 
         # Compose the transformations
         if trans_mean_std is not None:
@@ -59,7 +58,7 @@ class Environment:
             ])
 
         # Set seed
-        random.seed(self.random_seed)
+        random.seed(self._random_seed)
 
         # Configure init scene
         self._conf.configure()
@@ -76,7 +75,7 @@ class Environment:
         self._obs.clear()
 
         # Get instruction
-        self.instruction, self.reward_function = random.choice(self._instruction_set)
+        self.instruction, self.reward_function = random.choice(self._conf.instruction_set)
 
         # Populate initial observations
         for i in range(self._stack_obs):

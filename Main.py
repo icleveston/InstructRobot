@@ -10,8 +10,6 @@ import pandas as pd
 import torch
 from PIL import Image, ImageFont, ImageDraw
 from prettytable import PrettyTable
-from torchtext.data import get_tokenizer
-from torchtext.vocab import build_vocab_from_iterator
 from torchvision import transforms
 from tqdm import tqdm
 import wandb
@@ -28,13 +26,13 @@ torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=Fal
 def percentage_error_formula(x, amount_variation): round(x / amount_variation * 100, 3)
 
 
-def _create_env(queues: (), n_steps, n_rollout, n_trajectory, scene, instruction_set, trans_mean_std, random_seed):
+def _create_env(queues: (), n_steps, n_rollout, n_trajectory, conf, trans_mean_std, random_seed):
+
     in_queue, out_queue = queues
 
     # Create the environment
     env = Environment(
-        scene_file=scene,
-        instruction_set=instruction_set,
+        conf=conf,
         trans_mean_std=trans_mean_std,
         random_seed=random_seed
     )
@@ -130,8 +128,8 @@ class Main:
         # Training params
         self.conf = CubeSimpleConf()
         self.n_steps = 3E6
-        self.n_rollout = 1
-        self.n_trajectory = 3
+        self.n_rollout = 4
+        self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-5
         self.action_dim = 26
@@ -150,10 +148,6 @@ class Main:
         self.loss_path = None
         self.checkpoint_path = None
         self.images_path = None
-
-        # Create tokenizer and vocab
-        self.tokenizer = get_tokenizer("basic_english")
-        self.vocab = self._build_vocab(self.conf.instruction_set)
 
         # Set the seed
         torch.manual_seed(self.random_seed)
@@ -206,8 +200,7 @@ class Main:
                                                             self.n_steps,
                                                             self.n_rollout,
                                                             self.n_trajectory,
-                                                            self.scene_file,
-                                                            self.instruction_set,
+                                                            self.conf,
                                                             trans_mean_std,
                                                             self.random_seed)) for q in zip(self.in_queues,
                                                                                             self.out_queues)]
@@ -270,6 +263,7 @@ class Main:
         with tqdm(total=self.n_steps) as pbar:
 
             while self.current_step < self.n_steps:
+
                 # Train one rollout
                 mean_episodic_return, loss, obs_rollout = self._train_one_rollout()
 
@@ -495,8 +489,7 @@ class Main:
 
         # Create the environment
         env = Environment(
-            scene_file=self.scene_file,
-            instruction_set=self.instruction_set,
+            conf=self.conf,
             random_seed=self.random_seed
         )
 
@@ -535,33 +528,6 @@ class Main:
         env.close()
 
         print(online_mean_and_sd(image_tensor))
-
-
-def online_mean_and_sd(images):
-    cnt = 0
-    fst_moment = torch.empty(3)
-    snd_moment = torch.empty(3)
-
-    b, c, h, w = images.shape
-    nb_pixels = b * h * w
-    sum_ = torch.sum(images, dim=[0, 2, 3])
-    sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
-    fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
-    snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
-
-    cnt += nb_pixels
-
-    return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)
-
-
-def parse_arguments():
-    arg = argparse.ArgumentParser()
-    arg.add_argument("--test", type=str, required=False, help="should train or test")
-    arg.add_argument("--resume", type=str, required=False, help="should resume the train")
-
-    args = vars(arg.parse_args())
-
-    return args
 
 
 if __name__ == "__main__":

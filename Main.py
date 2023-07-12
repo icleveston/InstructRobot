@@ -93,6 +93,7 @@ def parse_arguments():
 
 
 def _format_video_wandb(last_obs_rollout) -> np.array:
+
     trans = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize((128, 256)),
@@ -126,8 +127,8 @@ class Main:
 
         # Training params
         self.conf = CubeSimpleConf()
-        self.n_steps = 3E6
-        self.n_rollout = 12
+        self.n_steps = 1024
+        self.n_rollout = 4
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-5
@@ -333,20 +334,20 @@ class Main:
         random_sample_index = random.randint(0, self.n_rollout - 1)
 
         old_states_array = []
-        training_data_array = []
+        training_data_array = [[] for _ in range(self.n_rollout)]
 
         # Get first observations
-        for o in self.out_queues:
+        for r, o in enumerate(self.out_queues):
             old_state, training_data = o.get()
             old_states_array.append(old_state)
-            training_data_array.append(training_data)
+            training_data_array[r].append(training_data)
             o.task_done()
 
         # For each trajectory
-        for t, _ in enumerate(range(self.n_trajectory)):
+        for j, t in enumerate(range(self.n_trajectory)):
 
             # Save observations for the last rollout
-            obs_rollout.append(training_data_array[random_sample_index])
+            obs_rollout.append(training_data_array[random_sample_index][j])
 
             # Select action from the agent
             actions, logprobs = self.agent.select_action(old_states_array)
@@ -360,12 +361,12 @@ class Main:
             new_states_array = []
 
             # Get states from environments
-            for out_q in self.out_queues:
+            for r, out_q in enumerate(self.out_queues):
                 new_state, reward, training_data = out_q.get()
                 out_q.task_done()
                 rewards.append(reward)
                 new_states_array.append(new_state)
-                training_data_array.append(training_data)
+                training_data_array[r].append(training_data)
 
             # Save rollout to memory
             self.memory.rewards += rewards
@@ -498,7 +499,7 @@ class Main:
             transforms.ToTensor(),
         ])
 
-        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 512, 2048), dtype=torch.float)
+        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 128, 512), dtype=torch.float)
 
         index = 0
 

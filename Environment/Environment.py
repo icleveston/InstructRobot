@@ -45,16 +45,16 @@ class Environment:
         self.vocab = self._build_vocab(self._conf.instruction_set)
 
         # Compose the transformations
-        if trans_mean_std is not None:
+        if trans_mean_std is None:
             self.trans = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Resize((128, 64)),
-                transforms.Normalize(trans_mean_std[0], trans_mean_std[1])
+                transforms.Resize((128, 64))
             ])
         else:
             self.trans = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Resize((128, 64))
+                transforms.Resize((128, 64)),
+                transforms.Normalize(trans_mean_std[0], trans_mean_std[1])
             ])
 
         # Set seed
@@ -126,9 +126,9 @@ class Environment:
         instruction_token = self.tokenizer(self._obs[-1][0])
 
         # Get instructions indexes
-        instruction_index = torch.tensor(self.vocab(instruction_token))
+        instruction_index = torch.tensor(self.vocab(instruction_token), device="cuda")
 
-        image_tensor = torch.empty((len(self._obs), 3, 128, 128), dtype=torch.float)
+        image_tensor = torch.empty((len(self._obs), 3, 128, 128), dtype=torch.float, device="cuda")
 
         for i, o in enumerate(self._obs):
             image_top = o[1]

@@ -16,6 +16,7 @@ import wandb
 from Agent import Agent, Memory
 from Environment import Environment
 from multiprocessing import Process, JoinableQueue
+import multiprocessing
 from Environment.CubeSimpleConf import CubeSimpleConf
 
 torch.set_printoptions(threshold=10_000)
@@ -27,7 +28,6 @@ def percentage_error_formula(x, amount_variation): round(x / amount_variation * 
 
 
 def _create_env(queues: (), n_steps, n_rollout, n_trajectory, conf, trans_mean_std, random_seed):
-
     in_queue, out_queue = queues
 
     # Create the environment
@@ -50,7 +50,6 @@ def _create_env(queues: (), n_steps, n_rollout, n_trajectory, conf, trans_mean_s
 
             # Return first observation
             out_queue.put(data)
-
             out_queue.join()
 
             for _ in range(n_trajectory):
@@ -128,7 +127,7 @@ class Main:
         # Training params
         self.conf = CubeSimpleConf()
         self.n_steps = 3E6
-        self.n_rollout = 4
+        self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-5
@@ -192,7 +191,7 @@ class Main:
         self.out_queues = [JoinableQueue() for _ in range(self.n_rollout)]
 
         # Compute image mean and std
-        #self._compute_mean_std()
+        # self._compute_mean_std()
         trans_mean_std = ([0.8517414331, 0.8405256271, 0.8349498510], [0.1922473758, 0.2080573738, 0.2201343030])
 
         # Create processes
@@ -263,7 +262,6 @@ class Main:
         with tqdm(total=self.n_steps) as pbar:
 
             while self.current_step < self.n_steps:
-
                 # Train one rollout
                 mean_episodic_return, loss, obs_rollout = self._train_one_rollout()
 
@@ -374,7 +372,7 @@ class Main:
             self.memory.states += old_states_array
             self.memory.actions += actions
             self.memory.logprobs += logprobs
-            self.memory.is_terminals += [0 if i != self.n_trajectory-1 else 1 for i in range(self.n_trajectory)]
+            self.memory.is_terminals += [0 if i != self.n_trajectory - 1 else 1 for i in range(self.n_trajectory)]
 
             # Update state
             old_states_array = old_states_array
@@ -531,6 +529,8 @@ class Main:
 
 
 if __name__ == "__main__":
+
+    multiprocessing.set_start_method('spawn')
 
     args = parse_arguments()
 

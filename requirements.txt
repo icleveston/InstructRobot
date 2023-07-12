@@ -37,7 +37,6 @@ pycparser==2.21
 pyparsing==3.0.9
 PyQt6-Qt6==6.4.2
 PyQt6-sip==13.4.1
-PyRep==4.1.0.3
 python-dateutil==2.8.2
 PyWavelets==1.4.1
 PyYAML==6.0

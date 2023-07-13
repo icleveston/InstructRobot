@@ -87,8 +87,13 @@ class Environment:
         frame_top = (self.cam_top.capture_rgb() * 255).astype(np.uint8)
         frame_front = (self.cam_front.capture_rgb() * 255).astype(np.uint8)
 
+        # Get joint positions
+        joint_position_flatten = []
+        for j in self.NAO.get_joint_positions():
+            joint_position_flatten += j
+
         # Build observation state
-        observation = (self.instruction, frame_top, frame_front)
+        observation = (self.instruction, joint_position_flatten, frame_top, frame_front)
 
         # Append the new observation
         self._obs.append(observation)
@@ -128,11 +133,17 @@ class Environment:
         # Get instructions indexes
         instruction_index = torch.tensor(self.vocab(instruction_token), device="cuda")
 
+        joint_position_tensor = torch.empty((len(self._obs), 26), dtype=torch.float, device="cuda")
+
         image_tensor = torch.empty((len(self._obs), 3, 128, 128), dtype=torch.float, device="cuda")
 
         for i, o in enumerate(self._obs):
-            image_top = o[1]
-            image_front = o[2]
+
+            # Convert joint position to tensor
+            joint_position_tensor[i] = torch.tensor(o[1], device="cuda")
+
+            image_top = o[2]
+            image_front = o[3]
 
             # Convert state to tensor
             image_top_tensor = self.trans(image_top)
@@ -145,7 +156,7 @@ class Environment:
 
         image = image_tensor.flatten(0, 1)
 
-        state = (instruction_index, image)
+        state = (instruction_index, joint_position_tensor, image)
 
         return state
 

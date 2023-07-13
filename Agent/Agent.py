@@ -27,15 +27,18 @@ class Agent:
     def select_action(self, states):
 
         state_instruction = []
+        state_joint_position = []
         state_vision = []
         for s in states:
             state_instruction.append(s[0])
-            state_vision.append(s[1])
+            state_joint_position.append(s[1])
+            state_vision.append(s[2])
 
         state_instruction = torch.stack(state_instruction)
+        state_joint_position = torch.stack(state_joint_position).flatten(1, 2)
         state_vision = torch.stack(state_vision)
 
-        return self.policy_old.act(state_instruction, state_vision)
+        return self.policy_old.act(state_instruction, state_joint_position, state_vision)
 
     def update(self, memory):
 
@@ -57,12 +60,16 @@ class Agent:
 
         # Separate states
         state_instruction = []
+        state_joint_position = []
         state_vision = []
         for s in memory.states:
             state_instruction.append(s[0])
-            state_vision.append(s[1])
+            state_joint_position.append(s[1])
+            state_vision.append(s[2])
 
         old_instruction_states = torch.squeeze(torch.stack(state_instruction, dim=0)).detach().to(self.device)
+        old_joint_position_states = torch.squeeze(torch.stack(state_joint_position, dim=0)).detach().to(self.device)\
+            .flatten(1, 2)
         old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
 
         loss = 0
@@ -70,7 +77,10 @@ class Agent:
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
             # Evaluating old actions and values :
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states, old_vision_states, old_actions)
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states,
+                                                                        old_joint_position_states,
+                                                                        old_vision_states,
+                                                                        old_actions)
 
             # Finding the ratio (pi_theta / pi_theta__old):
             ratios = torch.exp(logprobs - old_logprobs)
@@ -115,12 +125,13 @@ class ActorCritic(nn.Module):
 
         self.device = device
 
-        self.actor_vision = ConvNet(12, 250)
         self.actor_instruction = Transformer()
+        self.actor_joint_position = nn.Linear(4*26, 150)
+        self.actor_vision = ConvNet(12, 250)
 
         self.actor = nn.Sequential(
             nn.Tanh(),
-            nn.Linear(500, 256),
+            nn.Linear(650, 256),
             nn.Tanh(),
             nn.Linear(256, 128),
             nn.Tanh(),
@@ -128,10 +139,12 @@ class ActorCritic(nn.Module):
         )
 
         self.critic_vision = ConvNet(12, 250)
+        self.critic_joint_position = nn.Linear(4*26, 150)
         self.critic_instruction = Transformer()
 
         self.critic = nn.Sequential(
-            nn.Linear(500, 256),
+            nn.Tanh(),
+            nn.Linear(650, 256),
             nn.Tanh(),
             nn.Linear(256, 128),
             nn.Tanh(),
@@ -143,12 +156,13 @@ class ActorCritic(nn.Module):
     def forward(self):
         raise NotImplementedError
 
-    def act(self, state_instruction, state_vision):
+    def act(self, state_instruction, state_joint_position, state_vision):
 
         x_instruction = self.actor_instruction(state_instruction)
+        x_joint_position = self.actor_joint_position(state_joint_position)
         x_vision = self.actor_vision(state_vision)
 
-        x = torch.cat((x_instruction, x_vision), dim=1)
+        x = torch.cat((x_instruction, x_joint_position, x_vision), dim=1)
 
         action_mean = self.actor(x)
 
@@ -158,12 +172,13 @@ class ActorCritic(nn.Module):
 
         return action.detach(), action_logprob
 
-    def evaluate(self, state_instruction, state_vision, action):
+    def evaluate(self, state_instruction, state_joint_position, state_vision, action):
 
         x_instruction_actor = self.actor_instruction(state_instruction)
+        x_joint_position = self.actor_joint_position(state_joint_position)
         x_vision_actor = self.actor_vision(state_vision)
 
-        x_actor = torch.cat((x_instruction_actor, x_vision_actor), dim=1)
+        x_actor = torch.cat((x_instruction_actor, x_joint_position, x_vision_actor), dim=1)
 
         action_mean = self.actor(x_actor)
 
@@ -173,9 +188,10 @@ class ActorCritic(nn.Module):
         dist_entropy = dist.entropy().sum(dim=1)
 
         x_instruction_critic = self.critic_instruction(state_instruction)
+        x_joint_position_critic = self.critic_joint_position(state_joint_position)
         x_vision_critic = self.critic_vision(state_vision)
 
-        x_critic = torch.cat((x_instruction_critic, x_vision_critic), dim=1)
+        x_critic = torch.cat((x_instruction_critic, x_joint_position_critic, x_vision_critic), dim=1)
 
         state_value = self.critic(x_critic)
 

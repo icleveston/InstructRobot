@@ -151,7 +151,7 @@ def _format_video_wandb(last_obs_rollout) -> np.array:
     font = ImageFont.truetype("Roboto/Roboto-Medium.ttf", size=10)
 
     for index, o in enumerate(last_obs_rollout):
-        image_array = np.concatenate((trans(o[-1][1]), trans(o[-1][2])), axis=0)
+        image_array = np.concatenate((trans(o[-1][2]), trans(o[-1][3])), axis=0)
 
         image = Image.fromarray(image_array, mode="RGB")
 
@@ -187,8 +187,8 @@ class Main:
 
         # Training params
         self.conf = CubeSimpleConf()
-        self.n_steps = 1024
-        self.n_rollout = 4
+        self.n_steps = 3E6
+        self.n_rollout = 16
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-5
@@ -464,7 +464,7 @@ class Main:
 
             print(obs[-1][0])
 
-            im = Image.fromarray(obs[-1][1], mode="RGB")
+            im = Image.fromarray(obs[-1][2], mode="RGB")
             im.save(f"/home/ic-unicamp/phd/out/{index}.png")
 
     def _count_parameters(self, print_table=False):
@@ -549,8 +549,8 @@ class Main:
             _, _, obs = env.step(action)
 
             for o in obs:
-                image_top = o[1]
-                image_front = o[2]
+                image_top = o[2]
+                image_front = o[3]
 
                 # Convert state to tensor
                 image_top_tensor = trans(image_top)

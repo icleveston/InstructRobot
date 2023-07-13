@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.distributions import MultivariateNormal
+from torch.distributions import Normal
 
 
 #     lr_actor = 0.00003       # learning rate for actor network
@@ -138,7 +138,7 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 1)
         )
 
-        self.action_var = torch.full((action_dim,), action_std * action_std).to(self.device)
+        self.std = torch.full((action_dim,), action_std).to(self.device)
 
     def forward(self):
         raise NotImplementedError
@@ -151,11 +151,10 @@ class ActorCritic(nn.Module):
         x = torch.cat((x_instruction, x_vision), dim=1)
 
         action_mean = self.actor(x)
-        cov_mat = torch.diag(self.action_var).to(self.device)
 
-        dist = MultivariateNormal(action_mean, cov_mat)
-        action = dist.sample()
-        action_logprob = dist.log_prob(action)
+        dist = Normal(action_mean, self.std, validate_args=False)
+        action = dist.rsample()
+        action_logprob = dist.log_prob(action).sum(dim=1)
 
         return action.detach(), action_logprob
 
@@ -168,13 +167,10 @@ class ActorCritic(nn.Module):
 
         action_mean = self.actor(x_actor)
 
-        action_var = self.action_var.expand_as(action_mean).to(self.device)
-        cov_mat = torch.diag_embed(action_var).to(self.device)
+        dist = Normal(action_mean, self.std, validate_args=False)
 
-        dist = MultivariateNormal(action_mean, cov_mat)
-
-        action_logprobs = dist.log_prob(action)
-        dist_entropy = dist.entropy()
+        action_logprobs = dist.log_prob(action).sum(dim=1)
+        dist_entropy = dist.entropy().sum(dim=1)
 
         x_instruction_critic = self.critic_instruction(state_instruction)
         x_vision_critic = self.critic_vision(state_vision)

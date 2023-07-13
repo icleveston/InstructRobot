@@ -65,6 +65,31 @@ def _create_env(queues: (), n_steps, n_rollout, n_trajectory, conf, trans_mean_s
                 out_queue.join()
 
 
+def _save_wandb(in_queue, conf, model_name):
+
+    # Init Wandb
+    wandb.init(
+        project=str(conf),
+        name=model_name,
+        id=model_name
+    )
+
+    while True:
+        data = in_queue.get()
+        in_queue.task_done()
+
+        # Unpack data
+        mean_episodic_return, loss, obs_rollout, current_step = data
+
+        # Log Wandb
+        wandb.log(
+            {
+                "charts/mean_episodic_return": mean_episodic_return,
+                "charts/loss": loss,
+                "video": wandb.Video(_format_video_wandb(obs_rollout), fps=8)
+            }, step=current_step)
+
+
 def online_mean_and_sd(images):
     cnt = 0
     fst_moment = torch.empty(3)
@@ -93,7 +118,6 @@ def parse_arguments():
 
 
 def _format_video_wandb(last_obs_rollout) -> np.array:
-
     trans = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize((128, 256)),
@@ -208,6 +232,10 @@ class Main:
         # Start processes
         [p.start() for p in self.processes]
 
+        # Wandb queue and process
+        self.in_queues_wandb = JoinableQueue()
+        self.process_wandb = None
+
     def train(self, resume=None):
 
         # Should resume the train
@@ -249,12 +277,9 @@ class Main:
             # Load the model
             self._load_checkpoint(best=False)
 
-        # Init Wandb
-        wandb.init(
-            project=str(self.conf),
-            name=model_name,
-            id=model_name
-        )
+        # Start wandb process
+        self.process_wandb = Process(target=_save_wandb, args=(self.in_queues_wandb, self.conf, model_name))
+        self.process_wandb.start()
 
         print(f"[*] Output Folder: {model_name}")
         print(f"[*] Total Trainable Params: {self.num_parameters}")
@@ -281,13 +306,9 @@ class Main:
                 # Update the bar
                 pbar.update(self.current_step)
 
-                # Log Wandb
-                wandb.log(
-                    {
-                        "charts/mean_episodic_return": mean_episodic_return,
-                        "charts/loss": loss,
-                        "video": wandb.Video(_format_video_wandb(obs_rollout), fps=8)
-                    }, step=self.current_step)
+                # Send data to wandb process
+                self.in_queues_wandb.put((mean_episodic_return, loss, obs_rollout, self.current_step))
+                self.in_queues_wandb.join()
 
                 # Check if it is the best model
                 is_best = mean_episodic_return > self.best_mean_episodic_return

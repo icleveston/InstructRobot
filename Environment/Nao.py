@@ -5,6 +5,13 @@ import numpy as np
 import math
 
 
+def normalize(x, old_range, new_range):
+
+    norm = (x - old_range[0]) / (old_range[1] - old_range[0])
+
+    return norm * (new_range[1] - new_range[0]) + new_range[0]
+
+
 class Nao:
     def __init__(self):
 
@@ -27,8 +34,6 @@ class Nao:
         ) = self.get_joint_positions()
 
         joint_limits = {
-            "NAO_head_joint1": [-119.5, 119.5],
-            "NAO_head_joint2": [-38.5, 29.5],
             "NAO_rightArm_joint1": [-119.5, 119.5],
             "NAO_rightArm_joint2": [-76, 18],
             "NAO_rightArm_joint3": [-119.5, 119.5],
@@ -65,8 +70,14 @@ class Nao:
             low_act.append(joint_limits[joint][0])
             high_act.append(joint_limits[joint][1])
 
-        self.low_act = np.array(low_act) * math.pi / 180
-        self.high_act = np.array(high_act) * math.pi / 180
+        low_desired_act = np.array(low_act) * math.pi / 180
+        high_desired_act = np.array(high_act) * math.pi / 180
+
+        low_actual_act = np.full((26,), -1)
+        high_atual_act = np.full((26,), 1)
+
+        self.old_range = (low_actual_act, high_atual_act)
+        self.new_range = (low_desired_act, high_desired_act)
 
         fingers_names = [
             "NAOHand_thumb2_visible",
@@ -81,12 +92,6 @@ class Nao:
 
         self._joint_handles = list(map(sim.simGetObjectHandle, joint_names))
 
-    def get_low_act(self):
-        return self.low_act
-
-    def get_high_act(self):
-        return self.high_act
-
     def get_joint_positions(self):
         return self.leftArm.get_joint_positions(), self.leftHand.get_joint_positions(), \
             self.rightArm.get_joint_positions(), self.rightHand.get_joint_positions()
@@ -98,7 +103,11 @@ class Nao:
         return self.left_tips.get_position(), self.right_tips.get_position()
 
     def make_action(self, actions):
-        for joint_handle, action in zip(self._joint_handles, actions):
+
+        # Normalize actions
+        actions_normalized = normalize(actions, self.old_range, self.new_range)
+
+        for joint_handle, action in zip(self._joint_handles, actions_normalized):
             sim.simSetJointTargetPosition(joint_handle, action)
 
     def set_joint_positions(self, left_positions, left_hand_positions, right_positions, right_hand_positions):

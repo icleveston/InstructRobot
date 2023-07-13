@@ -65,8 +65,7 @@ def _create_env(queues: (), n_steps, n_rollout, n_trajectory, conf, trans_mean_s
                 out_queue.join()
 
 
-def _save_wandb(in_queue, conf, model_name, images_path, loss_path):
-
+def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_path):
     # Init Wandb
     wandb.init(
         project=str(conf),
@@ -79,7 +78,8 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path):
         in_queue.task_done()
 
         # Unpack data
-        mean_episodic_return, loss, obs_rollout, current_step = data
+        mean_episodic_return, loss, obs_rollout, current_step, agent_state, optim_state,\
+            best_mean_episodic_return = data
 
         # Log Wandb
         wandb.log(
@@ -100,6 +100,16 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path):
             writer_object = writer(f_object)
             writer_object.writerow(row)
             f_object.close()
+
+        is_best = mean_episodic_return > best_mean_episodic_return
+
+        # Save the checkpoint for each rollout
+        _save_checkpoint({
+            "current_step": current_step,
+            "best_mean_episodic_return": best_mean_episodic_return,
+            "model_state": agent_state,
+            "optim_state": optim_state,
+        }, checkpoint_path, is_best)
 
 
 def online_mean_and_sd(images):
@@ -155,6 +165,20 @@ def _format_video_wandb(last_obs_rollout) -> np.array:
     video = np.transpose(video, (0, 3, 1, 2))
 
     return video
+
+
+def _save_checkpoint(state, checkpoint_path, is_best):
+
+    # Set the checkpoint path
+    ckpt_path = os.path.join(checkpoint_path, "checkpoint.tar")
+
+    # Save the checkpoint
+    torch.save(state, ckpt_path)
+
+    # Save the best model
+    if is_best:
+        # Copy the checkpoint to the best model
+        shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_model.tar"))
 
 
 class Main:
@@ -294,7 +318,8 @@ class Main:
                                                                self.conf,
                                                                model_name,
                                                                self.images_path,
-                                                               self.loss_path))
+                                                               self.loss_path,
+                                                               self.checkpoint_path))
         self.process_wandb.start()
 
         print(f"[*] Output Folder: {model_name}")
@@ -322,22 +347,23 @@ class Main:
                 # Update the bar
                 pbar.update(self.current_step)
 
-                # Send data to wandb process
-                self.in_queues_wandb.put((mean_episodic_return, loss, obs_rollout, self.current_step))
-                self.in_queues_wandb.join()
-
                 # Check if it is the best model
-                is_best = mean_episodic_return > self.best_mean_episodic_return
-
                 self.best_mean_episodic_return = max(mean_episodic_return, self.best_mean_episodic_return)
 
-                # Save the checkpoint for each rollout
-                self._save_checkpoint({
-                    "current_step": self.current_step,
-                    "best_mean_episodic_return": self.best_mean_episodic_return,
-                    "model_state": self.agent.policy.state_dict(),
-                    "optim_state": self.agent.optimizer.state_dict(),
-                }, is_best)
+                # Get states
+                agent_state = self.agent.policy.state_dict()
+                optim_state = self.agent.optimizer.state_dict()
+
+                # Send data to wandb process
+                self.in_queues_wandb.put((mean_episodic_return,
+                                          loss,
+                                          obs_rollout,
+                                          self.current_step,
+                                          agent_state,
+                                          optim_state,
+                                          self.best_mean_episodic_return
+                                          ))
+                self.in_queues_wandb.join()
 
         # Wait all process to finish
         [p.join() for p in self.processes]
@@ -455,19 +481,6 @@ class Main:
 
         if print_table:
             print(table)
-
-    def _save_checkpoint(self, state, is_best):
-
-        # Set the checkpoint path
-        ckpt_path = os.path.join(self.checkpoint_path, "checkpoint.tar")
-
-        # Save the checkpoint
-        torch.save(state, ckpt_path)
-
-        # Save the best model
-        if is_best:
-            # Copy the checkpoint to the best model
-            shutil.copyfile(ckpt_path, os.path.join(self.checkpoint_path, "best_model.tar"))
 
     def _load_checkpoint(self, best=False):
 

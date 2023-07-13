@@ -35,9 +35,9 @@ class Nao:
 
         joint_limits = {
             "NAO_rightArm_joint1": [-119.5, 119.5],
-            "NAO_rightArm_joint2": [-76, 18],
+            "NAO_rightArm_joint2": [-76, 60],
             "NAO_rightArm_joint3": [-119.5, 119.5],
-            "NAO_rightArm_joint4": [2, 88.5],
+            "NAO_rightArm_joint4": [2, 120],
             "NAO_rightArm_joint5": [-104.5, 104.5],
             "NAOHand_thumb1#0": [0, 60],
             "NAOHand_thumb2#0": [0, 60],
@@ -48,9 +48,9 @@ class Nao:
             "NAOHand_leftJoint2#0": [0, 60],
             "NAOHand_leftJoint3#0": [0, 60],
             "NAO_leftArm_joint1": [-119.5, 119.5],
-            "NAO_leftArm_joint2": [-18, 76],
+            "NAO_leftArm_joint2": [-60, 76],
             "NAO_leftArm_joint3": [-119.5, 119.5],
-            "NAO_leftArm_joint4": [-88.5, -2],
+            "NAO_leftArm_joint4": [-120, -2],
             "NAO_leftArm_joint5": [-104.5, 104.5],
             "NAOHand_thumb1": [0, 60],
             "NAOHand_thumb2": [0, 60],

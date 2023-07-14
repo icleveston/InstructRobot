@@ -59,6 +59,7 @@ class Environment:
 
         # Set seed
         random.seed(self._random_seed)
+        torch.manual_seed(self._random_seed)
 
         # Configure init scene
         self._conf.configure()

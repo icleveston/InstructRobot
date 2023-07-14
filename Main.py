@@ -262,8 +262,8 @@ class Main:
                                                             self.n_trajectory,
                                                             self.conf,
                                                             trans_mean_std,
-                                                            self.random_seed)) for q in zip(self.in_queues,
-                                                                                            self.out_queues)]
+                                                            self.random_seed+i)) for i, q in enumerate(zip(self.in_queues,
+                                                                                            self.out_queues))]
 
         # Start processes
         [p.start() for p in self.processes]

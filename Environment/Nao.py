@@ -105,9 +105,9 @@ class Nao:
     def make_action(self, actions):
 
         # Normalize actions
-        actions_normalized = normalize(actions, self.old_range, self.new_range)
+        #actions_normalized = normalize(actions, self.old_range, self.new_range)
 
-        for joint_handle, action in zip(self._joint_handles, actions_normalized):
+        for joint_handle, action in zip(self._joint_handles, actions):
             sim.simSetJointTargetPosition(joint_handle, action)
 
     def set_joint_positions(self, left_positions, left_hand_positions, right_positions, right_hand_positions):

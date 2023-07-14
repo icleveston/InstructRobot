@@ -136,7 +136,7 @@ class ActorCritic(nn.Module):
             nn.Linear(256, 128),
             nn.Tanh(),
             nn.Linear(128, action_dim),
-            nn.Tanh()
+            #nn.Tanh()
         )
 
         self.critic_vision = ConvNet(12, 250)
@@ -151,9 +151,6 @@ class ActorCritic(nn.Module):
             nn.Tanh(),
             nn.Linear(128, 1)
         )
-
-        torch.nn.init.orthogonal_(self.actor[3].weight)
-        torch.nn.init.orthogonal_(self.actor[5].weight, gain=2)
 
         self.std = torch.full((action_dim,), action_std).to(self.device)
 

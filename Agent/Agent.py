@@ -1,23 +1,25 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal
-
-
-#     lr_actor = 0.00003       # learning rate for actor network
-#     lr_critic = 0.0001       # learning rate for critic network
+from torch.distributions import MultivariateNormal
 
 
 class Agent:
-    def __init__(self, action_dim, action_std, lr, betas, gamma, K_epochs, eps_clip, device):
+    def __init__(self, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, device):
         self.lr = lr
         self.betas = betas
         self.gamma = gamma
         self.eps_clip = eps_clip
-        self.K_epochs = K_epochs
+        self.K_epochs = k_epochs
         self.device = device
 
         self.policy = ActorCritic(action_dim, action_std, self.device).to(self.device)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
+        self.scheduler = torch.optim.lr_scheduler.LinearLR(
+            self.optimizer,
+            start_factor=1,
+            end_factor=0,
+            total_iters=total_iters
+        )
 
         self.policy_old = ActorCritic(action_dim, action_std, self.device).to(self.device)
         self.policy_old.load_state_dict(self.policy.state_dict())
@@ -68,7 +70,7 @@ class Agent:
             state_vision.append(s[2])
 
         old_instruction_states = torch.squeeze(torch.stack(state_instruction, dim=0)).detach().to(self.device)
-        old_joint_position_states = torch.squeeze(torch.stack(state_joint_position, dim=0)).detach().to(self.device)\
+        old_joint_position_states = torch.squeeze(torch.stack(state_joint_position, dim=0)).detach().to(self.device) \
             .flatten(1, 2)
         old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
 
@@ -96,6 +98,8 @@ class Agent:
             self.optimizer.zero_grad()
             loss.mean().backward()
             self.optimizer.step()
+
+        self.scheduler.step()
 
         # Copy new weights into old policy:
         self.policy_old.load_state_dict(self.policy.state_dict())
@@ -126,39 +130,37 @@ class ActorCritic(nn.Module):
         self.device = device
 
         self.actor_instruction = Transformer()
-        self.actor_joint_position = nn.Linear(4*26, 150)
+        self.actor_joint_position = nn.Linear(4 * 26, 150)
         self.actor_vision = ConvNet(12, 250)
 
         self.actor = nn.Sequential(
-            nn.Tanh(),
+            nn.LeakyReLU(),
             nn.Linear(650, 256),
-            nn.Tanh(),
+            nn.LeakyReLU(),
             nn.Linear(256, 128),
-            nn.Tanh(),
-            nn.Linear(128, action_dim),
-            #nn.Tanh()
+            nn.LeakyReLU(),
+            nn.Linear(128, action_dim)
         )
 
         self.critic_vision = ConvNet(12, 250)
-        self.critic_joint_position = nn.Linear(4*26, 150)
+        self.critic_joint_position = nn.Linear(4 * 26, 150)
         self.critic_instruction = Transformer()
 
         self.critic = nn.Sequential(
-            nn.Tanh(),
+            nn.LeakyReLU(),
             nn.Linear(650, 256),
-            nn.Tanh(),
+            nn.LeakyReLU(),
             nn.Linear(256, 128),
-            nn.Tanh(),
+            nn.LeakyReLU(),
             nn.Linear(128, 1)
         )
 
-        self.std = torch.full((action_dim,), action_std).to(self.device)
+        self.action_var = torch.full((action_dim,), action_std * action_std).to(self.device)
 
     def forward(self):
         raise NotImplementedError
 
     def act(self, state_instruction, state_joint_position, state_vision):
-
         x_instruction = self.actor_instruction(state_instruction)
         x_joint_position = self.actor_joint_position(state_joint_position)
         x_vision = self.actor_vision(state_vision)
@@ -166,15 +168,15 @@ class ActorCritic(nn.Module):
         x = torch.cat((x_instruction, x_joint_position, x_vision), dim=1)
 
         action_mean = self.actor(x)
+        cov_mat = torch.diag(self.action_var).to(self.device)
 
-        dist = Normal(action_mean, self.std, validate_args=False)
-        action = dist.rsample()
-        action_logprob = dist.log_prob(action).sum(dim=1)
+        dist = MultivariateNormal(action_mean, cov_mat, validate_args=False)
+        action = dist.sample()
+        action_logprob = dist.log_prob(action)
 
         return action.detach(), action_logprob
 
     def evaluate(self, state_instruction, state_joint_position, state_vision, action):
-
         x_instruction_actor = self.actor_instruction(state_instruction)
         x_joint_position = self.actor_joint_position(state_joint_position)
         x_vision_actor = self.actor_vision(state_vision)
@@ -183,10 +185,13 @@ class ActorCritic(nn.Module):
 
         action_mean = self.actor(x_actor)
 
-        dist = Normal(action_mean, self.std, validate_args=False)
+        action_var = self.action_var.expand_as(action_mean).to(self.device)
+        cov_mat = torch.diag_embed(action_var).to(self.device)
 
-        action_logprobs = dist.log_prob(action).sum(dim=1)
-        dist_entropy = dist.entropy().sum(dim=1)
+        dist = MultivariateNormal(action_mean, cov_mat, validate_args=False)
+
+        action_logprobs = dist.log_prob(action)
+        dist_entropy = dist.entropy()
 
         x_instruction_critic = self.critic_instruction(state_instruction)
         x_joint_position_critic = self.critic_joint_position(state_joint_position)
@@ -205,16 +210,16 @@ class ConvNet(nn.Module):
 
         # initialize first set of CONV => RELU => POOL layers
         self.conv1 = nn.Conv2d(in_channels=num_channels, out_channels=12, kernel_size=(5, 5))
-        self.relu1 = nn.ReLU()
+        self.relu1 = nn.LeakyReLU()
         self.maxpool1 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
         # initialize second set of CONV => RELU => POOL layers
         self.conv2 = nn.Conv2d(in_channels=12, out_channels=12, kernel_size=(5, 5))
-        self.relu2 = nn.ReLU()
+        self.relu2 = nn.LeakyReLU()
         self.maxpool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
         self.fc1 = nn.Linear(in_features=10092, out_features=256)
-        self.relu3 = nn.ReLU()
+        self.relu3 = nn.LeakyReLU()
         self.fc2 = nn.Linear(in_features=256, out_features=num_output)
 
     def forward(self, x):
@@ -255,4 +260,3 @@ class Transformer(nn.Module):
         x = x.view(x.shape[0], -1)
 
         return x
-

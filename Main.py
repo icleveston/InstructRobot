@@ -78,7 +78,7 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_p
         in_queue.task_done()
 
         # Unpack data
-        mean_episodic_return, loss, obs_rollout, current_step, agent_state, optim_state,\
+        mean_episodic_return, loss, lr, obs_rollout, current_step, agent_state, optim_state, \
             best_mean_episodic_return = data
 
         # Log Wandb
@@ -86,6 +86,7 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_p
             {
                 "charts/mean_episodic_return": mean_episodic_return,
                 "charts/loss": loss,
+                "charts/lr": np.float32(lr),
                 "video": wandb.Video(_format_video_wandb(obs_rollout), fps=8)
             }, step=current_step)
 
@@ -168,7 +169,6 @@ def _format_video_wandb(last_obs_rollout) -> np.array:
 
 
 def _save_checkpoint(state, checkpoint_path, is_best):
-
     # Set the checkpoint path
     ckpt_path = os.path.join(checkpoint_path, "checkpoint.tar")
 
@@ -191,12 +191,12 @@ class Main:
         self.n_rollout = 16
         self.n_trajectory = 32
         self.current_step = 0
-        self.lr = 1e-5
+        self.lr = 3e-4
         self.action_dim = 26
         self.action_std = 0.6
         self.betas = (0.9, 0.999)
         self.gamma = 0.99
-        self.k_epochs = 60
+        self.k_epochs = 10
         self.eps_clip = 0.2
 
         # Other params
@@ -236,7 +236,8 @@ class Main:
             lr=self.lr,
             betas=self.betas,
             gamma=self.gamma,
-            K_epochs=self.k_epochs,
+            k_epochs=self.k_epochs,
+            total_iters=self.n_steps // (self.n_rollout * self.n_trajectory),
             eps_clip=self.eps_clip,
             device=self.device
         )
@@ -262,8 +263,9 @@ class Main:
                                                             self.n_trajectory,
                                                             self.conf,
                                                             trans_mean_std,
-                                                            self.random_seed+i)) for i, q in enumerate(zip(self.in_queues,
-                                                                                            self.out_queues))]
+                                                            self.random_seed + i)) for i, q in
+                          enumerate(zip(self.in_queues,
+                                        self.out_queues))]
 
         # Start processes
         [p.start() for p in self.processes]
@@ -357,6 +359,7 @@ class Main:
                 # Send data to wandb process
                 self.in_queues_wandb.put((mean_episodic_return,
                                           loss,
+                                          self.agent.scheduler.get_last_lr()[0],
                                           obs_rollout,
                                           self.current_step,
                                           agent_state,

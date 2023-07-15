@@ -190,7 +190,7 @@ class Main:
         # Training params
         self.conf = CubeSimpleConf()
         self.n_steps = 3E6
-        self.n_rollout = 1
+        self.n_rollout = 16
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 3e-4

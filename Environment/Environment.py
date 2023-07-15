@@ -93,6 +93,9 @@ class Environment:
         for j in self.NAO.get_joint_positions():
             joint_position_flatten += j
 
+        # Get force sensors
+        #self.NAO.check_touch_sensors()
+
         # Build observation state
         observation = (self.instruction, joint_position_flatten, frame_top, frame_front)
 

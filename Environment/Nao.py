@@ -64,6 +64,8 @@ class Nao:
 
         joint_names = joint_limits.keys()
 
+        self._joint_handles = list(map(sim.simGetObjectHandle, joint_names))
+
         low_act = []
         high_act = []
         for joint in joint_names:
@@ -80,17 +82,26 @@ class Nao:
         self.new_range = (low_desired_act, high_desired_act)
 
         fingers_names = [
-            "NAOHand_thumb2_visible",
-            "NAOHand_rightJoint3_visible",
-            "NAOHand_leftJoint3_visible",
-            "NAOHand_thumb2_visible#0",
-            "NAOHand_rightJoint3_visible#0",
-            "NAOHand_leftJoint3_visible#0"
+            "/NAOHandRight_Finger1",
+            "/NAOHandRight_Finger2",
+            "/NAOHandRight_Finger3",
+            "/NAOHandLeft_Finger1",
+            "/NAOHandLeft_Finger2",
+            "/NAOHandLeft_Finger3"
         ]
 
         self._fingers_handles = [sim.simGetObjectHandle(i) for i in fingers_names]
 
-        self._joint_handles = list(map(sim.simGetObjectHandle, joint_names))
+        touch_names = [
+            "NAOHandRight_Touch1",
+            "NAOHandRight_Touch2",
+            "NAOHandRight_Touch3",
+            "NAOHandLeft_Touch1",
+            "NAOHandLeft_Touch2",
+            "NAOHandLeft_Touch3"
+        ]
+
+        self._touch_handles = [sim.simGetObjectHandle(i) for i in touch_names]
 
     def get_joint_positions(self):
         return self.leftArm.get_joint_positions(), self.leftHand.get_joint_positions(), \
@@ -121,6 +132,17 @@ class Nao:
                                  self.leftHand.initial_joints_positions,
                                  self.rightArm.initial_joints_positions,
                                  self.rightHand.initial_joints_positions)
+
+    def check_touch_sensors(self):
+
+        forceVector = []
+
+        for touch_handle in self._touch_handles:
+            _, force, _ = sim.simReadForceSensor(touch_handle)
+
+            forceVector += force
+
+        print(sum(forceVector))
 
     def check_collisions(self, object_handle) -> bool:
 

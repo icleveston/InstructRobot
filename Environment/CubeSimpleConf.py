@@ -36,7 +36,7 @@ class CubeSimpleConf(Conf):
         if nao.check_collisions(self.cube_green_handle):
             return 10
         elif nao.check_collisions(self.cube_red_handle) or nao.check_collisions(self.cube_blue_handle):
-            return -1
+            return 1
         else:
             return 0
 
@@ -47,7 +47,7 @@ class CubeSimpleConf(Conf):
         if nao.check_collisions(self.cube_red_handle):
             return 10
         elif nao.check_collisions(self.cube_green_handle) or nao.check_collisions(self.cube_blue_handle):
-            return -1
+            return 1
         else:
             return 0
 
@@ -58,7 +58,7 @@ class CubeSimpleConf(Conf):
         if nao.check_collisions(self.cube_blue_handle):
             return 10
         elif nao.check_collisions(self.cube_red_handle) or nao.check_collisions(self.cube_green_handle):
-            return -1
+            return 1
         else:
             return 0
 

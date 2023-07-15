@@ -19,7 +19,7 @@ class Environment:
         trans_mean_std=None,
         headless: bool = True,
         _change_inst_step: int = 1000,
-        stack_obs: int = 4,
+        stack_obs: int = 3,
         random_seed: int = 1
     ):
 

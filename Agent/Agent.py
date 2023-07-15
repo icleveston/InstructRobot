@@ -139,8 +139,8 @@ class ActorCritic(nn.Module):
         self.action_var = torch.full((self.action_dim,), self.action_std).to(self.device)
 
         self.actor_instruction = Transformer()
-        self.actor_joint_position = nn.Linear(4 * 26, 150)
-        self.actor_vision = ConvNet(12, 250)
+        self.actor_joint_position = nn.Linear(3 * 26, 150)
+        self.actor_vision = ConvNet(9, 250)
 
         self.actor = nn.Sequential(
             nn.LeakyReLU(),
@@ -151,8 +151,8 @@ class ActorCritic(nn.Module):
             nn.Linear(128, action_dim)
         )
 
-        self.critic_vision = ConvNet(12, 250)
-        self.critic_joint_position = nn.Linear(4 * 26, 150)
+        self.critic_vision = ConvNet(9, 250)
+        self.critic_joint_position = nn.Linear(3 * 26, 150)
         self.critic_instruction = Transformer()
 
         self.critic = nn.Sequential(

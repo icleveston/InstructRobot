@@ -12,7 +12,9 @@ class Agent:
         self.K_epochs = k_epochs
         self.device = device
 
-        self.policy = ActorCritic(action_dim, action_std, self.device).to(self.device)
+        self.anneal_factor = 1 / total_iters
+
+        self.policy = ActorCritic(action_dim, action_std, self.anneal_factor, self.device).to(self.device)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
         self.scheduler = torch.optim.lr_scheduler.LinearLR(
             self.optimizer,
@@ -21,7 +23,7 @@ class Agent:
             total_iters=total_iters
         )
 
-        self.policy_old = ActorCritic(action_dim, action_std, self.device).to(self.device)
+        self.policy_old = ActorCritic(action_dim, action_std, self.anneal_factor, self.device).to(self.device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
         self.MseLoss = nn.MSELoss()
@@ -99,7 +101,10 @@ class Agent:
             loss.mean().backward()
             self.optimizer.step()
 
+        # Anneal parameters
+        self.policy.anneal_std()
         self.scheduler.step()
+        self.eps_clip -= self.eps_clip*self.anneal_factor
 
         # Copy new weights into old policy:
         self.policy_old.load_state_dict(self.policy.state_dict())
@@ -124,10 +129,14 @@ class Memory:
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, action_dim, action_std, device):
+    def __init__(self, action_dim, action_std, anneal_factor, device):
         super(ActorCritic, self).__init__()
 
+        self.action_dim = action_dim
+        self.action_std = action_std
+        self.anneal_factor = anneal_factor
         self.device = device
+        self.action_var = torch.full((self.action_dim,), self.action_std).to(self.device)
 
         self.actor_instruction = Transformer()
         self.actor_joint_position = nn.Linear(4 * 26, 150)
@@ -154,8 +163,6 @@ class ActorCritic(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(128, 1)
         )
-
-        self.action_var = torch.full((action_dim,), action_std * action_std).to(self.device)
 
     def forward(self):
         raise NotImplementedError
@@ -202,6 +209,10 @@ class ActorCritic(nn.Module):
         state_value = self.critic(x_critic)
 
         return action_logprobs, torch.squeeze(state_value), dist_entropy
+
+    def anneal_std(self):
+        self.action_std -= self.action_std*self.anneal_factor
+        self.action_var = torch.full((self.action_dim,), self.action_std).to(self.device)
 
 
 class ConvNet(nn.Module):

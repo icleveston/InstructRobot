@@ -78,7 +78,7 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_p
         in_queue.task_done()
 
         # Unpack data
-        mean_episodic_return, loss, lr, obs_rollout, current_step, agent_state, optim_state, \
+        mean_episodic_return, loss, lr, eps, action_std, obs_rollout, current_step, agent_state, optim_state, \
             best_mean_episodic_return = data
 
         # Log Wandb
@@ -87,6 +87,8 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_p
                 "charts/mean_episodic_return": mean_episodic_return,
                 "charts/loss": loss,
                 "charts/lr": np.float32(lr),
+                "charts/action_std": np.float32(action_std),
+                "charts/eps": np.float32(eps),
                 "video": wandb.Video(_format_video_wandb(obs_rollout), fps=8)
             }, step=current_step)
 
@@ -188,7 +190,7 @@ class Main:
         # Training params
         self.conf = CubeSimpleConf()
         self.n_steps = 3E6
-        self.n_rollout = 16
+        self.n_rollout = 1
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 3e-4
@@ -196,7 +198,7 @@ class Main:
         self.action_std = 0.6
         self.betas = (0.9, 0.999)
         self.gamma = 0.99
-        self.k_epochs = 10
+        self.k_epochs = 15
         self.eps_clip = 0.2
 
         # Other params
@@ -360,6 +362,8 @@ class Main:
                 self.in_queues_wandb.put((mean_episodic_return,
                                           loss,
                                           self.agent.scheduler.get_last_lr()[0],
+                                          self.agent.eps_clip,
+                                          self.agent.policy.action_std,
                                           obs_rollout,
                                           self.current_step,
                                           agent_state,

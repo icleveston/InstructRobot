@@ -81,20 +81,29 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_p
         mean_episodic_return, loss, lr, eps, action_std, obs_rollout, current_step, agent_state, optim_state, \
             best_mean_episodic_return = data
 
+        # Unpack observations
+        actions = []
+        observations = []
+
+        for r in obs_rollout:
+            actions.append(r[0].cpu().data.numpy())
+            observations.append(r[1])
+
         # Log Wandb
         wandb.log(
             {
-                "charts/mean_episodic_return": mean_episodic_return,
-                "charts/loss": loss,
-                "charts/lr": np.float32(lr),
-                "charts/action_std": np.float32(action_std),
-                "charts/eps": np.float32(eps),
-                "video": wandb.Video(_format_video_wandb(obs_rollout), fps=8)
+                "mean_episodic_return": mean_episodic_return,
+                "loss": loss,
+                "lr": np.float32(lr),
+                "action_std": np.float32(action_std),
+                "eps": np.float32(eps),
+                "video": wandb.Video(_format_video_wandb(observations), fps=8),
+                f"actions-{current_step}": wandb.Table(columns=[f"a{i}" for i in range(26)], data=actions)
             }, step=current_step)
 
         # Dump observation data
         with open(os.path.join(images_path, f"observation.p"), "wb") as f:
-            pickle.dump(obs_rollout, f)
+            pickle.dump(observations, f)
 
         row = [loss, mean_episodic_return]
 
@@ -399,7 +408,7 @@ class Main:
         for r, o in enumerate(self.out_queues):
             old_state, training_data = o.get()
             old_states_array.append(old_state)
-            training_data_array[r].append(training_data)
+            training_data_array[r].append((torch.tensor([0 for _ in range(self.action_dim)]), training_data))
             o.task_done()
 
         # For each trajectory
@@ -425,7 +434,7 @@ class Main:
                 out_q.task_done()
                 rewards.append(reward)
                 new_states_array.append(new_state)
-                training_data_array[r].append(training_data)
+                training_data_array[r].append((actions[r], training_data))
 
             # Save rollout to memory
             self.memory.rewards += rewards

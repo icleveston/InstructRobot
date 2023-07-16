@@ -401,15 +401,20 @@ class Main:
         # Random a rollout to sample
         random_sample_index = random.randint(0, self.n_rollout - 1)
 
-        old_states_array = []
+        states_array = [[] for _ in range(self.n_rollout)]
+        reward_array = [[] for _ in range(self.n_rollout)]
+        action_array = [[] for _ in range(self.n_rollout)]
+        logprob_array = [[] for _ in range(self.n_rollout)]
+        is_terminals_array = [[] for _ in range(self.n_rollout)]
         training_data_array = [[] for _ in range(self.n_rollout)]
 
         # Get first observations
         for r, o in enumerate(self.out_queues):
-            old_state, training_data = o.get()
-            old_states_array.append(old_state)
-            training_data_array[r].append((torch.tensor([0 for _ in range(self.action_dim)]), training_data))
+            state, training_data = o.get()
             o.task_done()
+
+            states_array[r].append(state)
+            training_data_array[r].append((torch.tensor([0 for _ in range(self.action_dim)]), training_data))
 
         # For each trajectory
         for j, t in enumerate(range(self.n_trajectory)):
@@ -418,33 +423,34 @@ class Main:
             obs_rollout.append(training_data_array[random_sample_index][j])
 
             # Select action from the agent
-            actions, logprobs = self.agent.select_action(old_states_array)
+            actions, logprobs = self.agent.select_action([s[-1] for s in states_array])
 
             # Send actions to environments
             for in_index, in_q in enumerate(self.in_queues):
                 in_q.put(actions[in_index].cpu().data.numpy().tolist())
                 in_q.join()
 
-            rewards = []
-            new_states_array = []
-
             # Get states from environments
             for r, out_q in enumerate(self.out_queues):
                 new_state, reward, training_data = out_q.get()
                 out_q.task_done()
-                rewards.append(reward)
-                new_states_array.append(new_state)
+
+                reward_array[r].append(reward)
+                action_array[r].append(actions[r])
+                logprob_array[r].append(logprobs[r])
+                is_terminals_array[r].append(0 if j != self.n_trajectory - 1 else 1)
+                if j != self.n_trajectory-1:
+                    states_array[r].append(new_state)
+
                 training_data_array[r].append((actions[r], training_data))
 
-            # Save rollout to memory
-            self.memory.rewards += rewards
-            self.memory.states += old_states_array
-            self.memory.actions += actions
-            self.memory.logprobs += logprobs
-            self.memory.is_terminals += [0 if i != self.n_trajectory - 1 else 1 for i in range(self.n_trajectory)]
-
-            # Update state
-            old_states_array = old_states_array
+        # Save rollout to memory
+        for r in range(self.n_rollout):
+            self.memory.rewards += reward_array[r]
+            self.memory.states += states_array[r]
+            self.memory.actions += action_array[r]
+            self.memory.logprobs += logprob_array[r]
+            self.memory.is_terminals += is_terminals_array[r]
 
         # Compute the mean episodic return
         mean_episodic_return = sum(self.memory.rewards) / len(self.memory.rewards)

@@ -94,7 +94,9 @@ def _save_wandb(in_queue, resume, conf, model_name, images_path, loss_path, chec
         wandb.log(
             {
                 "mean_episodic_return": mean_episodic_return,
-                "loss": loss,
+                "loss/actor": loss[0],
+                "loss/entropy": loss[1],
+                "loss/critic": loss[2],
                 "lr": np.float32(lr),
                 "action_std": np.float32(action_std),
                 "eps": np.float32(eps),
@@ -106,7 +108,7 @@ def _save_wandb(in_queue, resume, conf, model_name, images_path, loss_path, chec
         with open(os.path.join(images_path, f"observation.p"), "wb") as f:
             pickle.dump(observations, f)
 
-        row = [loss, mean_episodic_return]
+        row = [loss[0], loss[1], loss[2], mean_episodic_return]
 
         # Save training history
         with open(os.path.join(loss_path, 'history.csv'), 'a') as f_object:
@@ -356,10 +358,17 @@ class Main:
                 toc = time.time()
 
                 # Set the var description
-                pbar.set_description(("{:.1f}s - step: {:.1f} - loss: {:.6f} - return: {:.6f}".
+                pbar.set_description(("{:.1f}s "
+                                      "- step: {:.1f} "
+                                      "- loss actor: {:.6f} "
+                                      "- loss critic: {:.6f} "
+                                      "- loss entropy: {:.6f} "
+                                      "- return: {:.6f}".
                                       format((toc - tic),
                                              self.current_step,
-                                             loss,
+                                             loss[0],
+                                             loss[2],
+                                             loss[1],
                                              mean_episodic_return)))
 
                 # Update the bar
@@ -463,12 +472,15 @@ class Main:
         mean_episodic_return = sum(self.memory.rewards) / len(self.memory.rewards)
 
         # Update the weights
-        loss = self.agent.update(self.memory)
+        loss_actor, loss_entropy, loss_critic = self.agent.update(self.memory)
+
+        # Pack loss
+        loss = (loss_actor.cpu().data.numpy(), loss_entropy.cpu().data.numpy(), loss_critic.cpu().data.numpy())
 
         # Clear the memory
         self.memory.clear_memory()
 
-        return mean_episodic_return, loss.cpu().data.numpy(), obs_rollout
+        return mean_episodic_return, loss, obs_rollout
 
     @torch.no_grad()
     def test(self, model_name):

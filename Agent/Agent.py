@@ -94,7 +94,11 @@ class Agent:
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
 
-            loss = -torch.min(surr1, surr2) - 0.01 * dist_entropy + 0.5 * self.MseLoss(state_values, rewards)
+            loss_actor = -torch.min(surr1, surr2)
+            loss_entropy = - 0.01 * dist_entropy
+            loss_critic = 0.5 * self.MseLoss(state_values, rewards)
+
+            loss = loss_actor + loss_entropy + loss_critic
 
             # take gradient step
             self.optimizer.zero_grad()
@@ -109,7 +113,7 @@ class Agent:
         # Copy new weights into old policy:
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-        return loss.mean()
+        return loss_actor.mean(), loss_entropy.mean(), loss_critic.mean()
 
 
 class Memory:

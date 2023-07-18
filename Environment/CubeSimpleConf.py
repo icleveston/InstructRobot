@@ -24,41 +24,57 @@ class CubeSimpleConf(Conf):
     def configure(self):
         pass
 
-    def _get_handles(self):
-        self.cube_green_handle = sim.simGetObjectHandle("Cube_Green")
-        self.cube_red_handle = sim.simGetObjectHandle("Cube_Red")
-        self.cube_blue_handle = sim.simGetObjectHandle("Cube_Blue")
+    def _get_collisions(self, nao: Nao):
+
+        if self.cube_green_handle is None:
+            self.cube_green_handle = sim.simGetObjectHandle("Cube_Green")
+        if self.cube_red_handle is None:
+            self.cube_red_handle = sim.simGetObjectHandle("Cube_Red")
+        if self.cube_blue_handle is None:
+            self.cube_blue_handle = sim.simGetObjectHandle("Cube_Blue")
+
+        n_collision_blue = nao.check_collisions(self.cube_blue_handle)
+        n_collision_red = nao.check_collisions(self.cube_red_handle)
+        n_collision_green = nao.check_collisions(self.cube_green_handle)
+
+        return n_collision_blue, n_collision_red, n_collision_green
 
     def _touch_green_cube(self, nao: Nao):
 
-        self._get_handles()
+        n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
-        if nao.check_collisions(self.cube_green_handle):
-            return 10
-        elif nao.check_collisions(self.cube_red_handle) or nao.check_collisions(self.cube_blue_handle):
-            return 1
+        if n_collision_green:
+            return 10 * n_collision_green
+        elif n_collision_red:
+            return -1 * n_collision_red
+        elif n_collision_blue:
+            return -1 * n_collision_blue
         else:
             return 0
 
     def _touch_red_cube(self, nao: Nao):
 
-        self._get_handles()
+        n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
-        if nao.check_collisions(self.cube_red_handle):
-            return 10
-        elif nao.check_collisions(self.cube_green_handle) or nao.check_collisions(self.cube_blue_handle):
-            return 1
+        if n_collision_red:
+            return 10 * n_collision_red
+        elif n_collision_blue:
+            return -1 * n_collision_blue
+        elif n_collision_green:
+            return -1 * n_collision_green
         else:
             return 0
 
     def _touch_blue_cube(self, nao: Nao):
 
-        self._get_handles()
+        n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
-        if nao.check_collisions(self.cube_blue_handle):
-            return 10
-        elif nao.check_collisions(self.cube_red_handle) or nao.check_collisions(self.cube_green_handle):
-            return 1
+        if n_collision_blue:
+            return 10 * n_collision_blue
+        elif n_collision_red:
+            return -1 * n_collision_red
+        elif n_collision_green:
+            return -1 * n_collision_green
         else:
             return 0
 

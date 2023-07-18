@@ -143,11 +143,11 @@ class ActorCritic(nn.Module):
         self.actor_vision = ConvNet(9, 250)
 
         self.actor = nn.Sequential(
-            nn.LeakyReLU(),
+            nn.Tanh(),
             nn.Linear(650, 256),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             nn.Linear(256, 128),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             nn.Linear(128, action_dim)
         )
 
@@ -156,11 +156,11 @@ class ActorCritic(nn.Module):
         self.critic_instruction = Transformer()
 
         self.critic = nn.Sequential(
-            nn.LeakyReLU(),
+            nn.Tanh(),
             nn.Linear(650, 256),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             nn.Linear(256, 128),
-            nn.LeakyReLU(),
+            nn.Tanh(),
             nn.Linear(128, 1)
         )
 

@@ -206,9 +206,9 @@ class Main:
         self.n_rollout = 16
         self.n_trajectory = 32
         self.current_step = 0
-        self.lr = 3e-4
+        self.lr = 1e-4
         self.action_dim = 26
-        self.action_std = 0.6
+        self.action_std = 0.5
         self.betas = (0.9, 0.999)
         self.gamma = 0.99
         self.k_epochs = 15

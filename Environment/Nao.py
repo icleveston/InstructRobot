@@ -141,10 +141,12 @@ class Nao:
 
         print(sum(forceVector))
 
-    def check_collisions(self, object_handle) -> bool:
+    def check_collisions(self, object_handle) -> int:
+
+        counter = 0
 
         for joint in self._fingers_handles:
             if sim.simCheckCollision(joint, object_handle):
-                return True
+                counter += 1
 
-        return False
+        return counter

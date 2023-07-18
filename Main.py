@@ -65,12 +65,13 @@ def _create_env(queues: (), n_steps, n_rollout, n_trajectory, conf, trans_mean_s
                 out_queue.join()
 
 
-def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_path):
+def _save_wandb(in_queue, resume, conf, model_name, images_path, loss_path, checkpoint_path):
     # Init Wandb
     wandb.init(
         project=str(conf),
         name=model_name,
-        id=model_name
+        id=model_name,
+        resume=resume
     )
 
     while True:
@@ -79,7 +80,7 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_p
 
         # Unpack data
         mean_episodic_return, loss, lr, eps, action_std, obs_rollout, current_step, agent_state, optim_state, \
-            best_mean_episodic_return = data
+            scheduler_state, best_mean_episodic_return = data
 
         # Unpack observations
         actions = []
@@ -121,6 +122,9 @@ def _save_wandb(in_queue, conf, model_name, images_path, loss_path, checkpoint_p
             "best_mean_episodic_return": best_mean_episodic_return,
             "model_state": agent_state,
             "optim_state": optim_state,
+            "scheduler_state": scheduler_state,
+            "eps_clip": eps,
+            "action_std": action_std,
         }, checkpoint_path, is_best)
 
 
@@ -198,7 +202,7 @@ class Main:
 
         # Training params
         self.conf = CubeSimpleConf()
-        self.n_steps = 3E6
+        self.n_steps = 1E6
         self.n_rollout = 16
         self.n_trajectory = 32
         self.current_step = 0
@@ -328,6 +332,7 @@ class Main:
 
         # Start wandb process
         self.process_wandb = Process(target=_save_wandb, args=(self.in_queues_wandb,
+                                                               resume is not None,
                                                                self.conf,
                                                                model_name,
                                                                self.images_path,
@@ -366,6 +371,7 @@ class Main:
                 # Get states
                 agent_state = self.agent.policy.state_dict()
                 optim_state = self.agent.optimizer.state_dict()
+                scheduler_state = self.agent.scheduler.state_dict()
 
                 # Send data to wandb process
                 self.in_queues_wandb.put((mean_episodic_return,
@@ -377,6 +383,7 @@ class Main:
                                           self.current_step,
                                           agent_state,
                                           optim_state,
+                                          scheduler_state,
                                           self.best_mean_episodic_return
                                           ))
                 self.in_queues_wandb.join()
@@ -520,8 +527,11 @@ class Main:
         # Load the variables from checkpoint
         self.current_step = checkpoint["current_step"]
         self.best_mean_episodic_return = checkpoint["best_mean_episodic_return"]
+        self.eps_clip = checkpoint["eps_clip"]
+        self.action_std = checkpoint["action_std"]
         self.agent.policy.load_state_dict(checkpoint["model_state"])
         self.agent.optimizer.load_state_dict(checkpoint["optim_state"])
+        self.agent.scheduler.load_state_dict(checkpoint["scheduler_state"])
 
         if best:
             print(

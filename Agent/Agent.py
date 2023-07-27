@@ -3,11 +3,40 @@ import torch.nn as nn
 from torch.distributions import MultivariateNormal
 
 
+def gae(rewards, values, episode_ends, gamma, lam):
+    """Compute generalized advantage estimate.
+        rewards: a list of rewards at each step.
+        values: the value estimate of the state at each step.
+        episode_ends: an array of the same shape as rewards, with a 1 if the
+            episode ended at that step and a 0 otherwise.
+        gamma: the discount factor.
+        lam: the GAE lambda parameter.
+    """
+    # Invert episode_ends to have 0 if the episode ended and 1 otherwise
+    episode_ends = (episode_ends * -1) + 1
+
+    N = rewards.shape[0]
+    T = rewards.shape[1]
+    gae_step = torch.zeros((N, ))
+    advantages = torch.zeros((N, T))
+    for t in reversed(range(T - 1)):
+        # First compute delta, which is the one-step TD error
+        delta = rewards[:, t] + gamma * values[:, t + 1] * episode_ends[:, t] - values[:, t]
+        # Then compute the current step's GAE by discounting the previous step
+        # of GAE, resetting it to zero if the episode ended, and adding this
+        # step's delta
+        gae_step = delta + gamma * lam * episode_ends[:, t] * gae_step
+        # And store it
+        advantages[:, t] = gae_step
+
+    return advantages
+
+
 class Agent:
-    def __init__(self, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, device):
-        self.lr = lr
-        self.betas = betas
+    def __init__(self, action_dim, action_std, lr_actor, lr_critic, betas, gamma, lam, k_epochs, eps_clip, total_iters,
+                 device):
         self.gamma = gamma
+        self.lam = lam
         self.eps_clip = eps_clip
         self.K_epochs = k_epochs
         self.device = device
@@ -15,7 +44,18 @@ class Agent:
         self.anneal_factor = 1 / total_iters
 
         self.policy = ActorCritic(action_dim, action_std, self.anneal_factor, self.device).to(self.device)
-        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
+
+        self.optimizer = torch.optim.Adam([
+                {'params': self.policy.actor.parameters(), 'lr': lr_actor, 'betas': betas},
+                {'params': self.policy.actor_vision.parameters(), 'lr': lr_actor, 'betas': betas},
+                {'params': self.policy.actor_instruction.parameters(), 'lr': lr_actor, 'betas': betas},
+                {'params': self.policy.actor_joint_position.parameters(), 'lr': lr_actor, 'betas': betas},
+                {'params': self.policy.critic.parameters(), 'lr': lr_critic, 'betas': betas},
+                # {'params': self.policy.critic_vision.parameters(), 'lr': lr_critic, 'betas': betas},
+                # {'params': self.policy.critic_instruction.parameters(), 'lr': lr_critic, 'betas': betas},
+                # {'params': self.policy.critic_joint_position.parameters(), 'lr': lr_critic, 'betas': betas},
+            ])
+
         self.scheduler = torch.optim.lr_scheduler.LinearLR(
             self.optimizer,
             start_factor=1,
@@ -26,7 +66,7 @@ class Agent:
         self.policy_old = ActorCritic(action_dim, action_std, self.anneal_factor, self.device).to(self.device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-        self.MseLoss = nn.MSELoss()
+        self.critic_loss = nn.MSELoss()
 
     def select_action(self, states):
 
@@ -56,11 +96,14 @@ class Agent:
 
         # Normalizing the rewards
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
-        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+        #rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+
+        #is_terminals = torch.tensor(memory.is_terminals, dtype=torch.float32).to(self.device)
 
         # Convert list to tensor
         old_actions = torch.squeeze(torch.stack(memory.actions, dim=0)).detach().to(self.device)
         old_logprobs = torch.squeeze(torch.stack(memory.logprobs, dim=0)).detach().to(self.device)
+        old_state_values = torch.squeeze(torch.stack(memory.old_state_values, dim=0)).detach().to(self.device)
 
         # Separate states
         state_instruction = []
@@ -76,10 +119,13 @@ class Agent:
             .flatten(1, 2)
         old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
 
-        loss = 0
+        advantages = rewards - old_state_values.detach()
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
+        # advantages = gae(rewards, state_values.detach(), is_terminals, self.gamma, self.lam)
 
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
+
             # Evaluating old actions and values :
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states,
                                                                         old_joint_position_states,
@@ -90,13 +136,12 @@ class Agent:
             ratios = torch.exp(logprobs - old_logprobs)
 
             # Finding Surrogate Loss:
-            advantages = rewards - state_values.detach()
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
 
             loss_actor = -torch.min(surr1, surr2)
-            loss_entropy = - 0.01 * dist_entropy
-            loss_critic = 0.5 * self.MseLoss(state_values, rewards)
+            loss_entropy = -0.01 * dist_entropy
+            loss_critic = self.critic_loss(state_values, rewards)
 
             loss = loss_actor + loss_entropy + loss_critic
 
@@ -107,7 +152,7 @@ class Agent:
 
         # Anneal parameters
         self.policy.anneal_std()
-        self.scheduler.step()
+        #self.scheduler.step()
         self.eps_clip -= self.eps_clip*self.anneal_factor
 
         # Copy new weights into old policy:
@@ -120,6 +165,7 @@ class Memory:
     def __init__(self):
         self.actions = []
         self.states = []
+        self.old_state_values = []
         self.logprobs = []
         self.rewards = []
         self.is_terminals = []
@@ -127,6 +173,7 @@ class Memory:
     def clear_memory(self):
         del self.actions[:]
         del self.states[:]
+        del self.old_state_values[:]
         del self.logprobs[:]
         del self.rewards[:]
         del self.is_terminals[:]
@@ -143,29 +190,28 @@ class ActorCritic(nn.Module):
         self.action_var = torch.full((self.action_dim,), self.action_std).to(self.device)
 
         self.actor_instruction = Transformer()
-        self.actor_joint_position = nn.Linear(3 * 26, 150)
-        self.actor_vision = ConvNet(9, 250)
+        self.actor_joint_position = nn.Linear(3 * 26, 128)
+        self.actor_vision = ConvNet(9, 1024)
 
         self.actor = nn.Sequential(
             nn.Tanh(),
-            nn.Linear(650, 256),
+            nn.Linear(1402, 256),
             nn.Tanh(),
-            nn.Linear(256, 128),
-            nn.Tanh(),
-            nn.Linear(128, action_dim)
+            nn.Linear(256, action_dim),
+            nn.Tanh()
         )
 
-        self.critic_vision = ConvNet(9, 250)
-        self.critic_joint_position = nn.Linear(3 * 26, 150)
-        self.critic_instruction = Transformer()
+        nn.init.normal_(self.actor[3].weight, 0, 0.0001)
+
+        # self.critic_vision = ConvNet(9, 250)
+        # self.critic_joint_position = nn.Linear(3 * 26, 150)
+        # self.critic_instruction = Transformer()
 
         self.critic = nn.Sequential(
             nn.Tanh(),
-            nn.Linear(650, 256),
+            nn.Linear(1402, 512),
             nn.Tanh(),
-            nn.Linear(256, 128),
-            nn.Tanh(),
-            nn.Linear(128, 1)
+            nn.Linear(512, 1)
         )
 
     def forward(self):
@@ -185,16 +231,18 @@ class ActorCritic(nn.Module):
         action = dist.sample()
         action_logprob = dist.log_prob(action)
 
-        return action.detach(), action_logprob
+        state_value = self.critic(x)
+
+        return action.detach(), action_logprob, torch.squeeze(state_value)
 
     def evaluate(self, state_instruction, state_joint_position, state_vision, action):
         x_instruction_actor = self.actor_instruction(state_instruction)
         x_joint_position = self.actor_joint_position(state_joint_position)
         x_vision_actor = self.actor_vision(state_vision)
 
-        x_actor = torch.cat((x_instruction_actor, x_joint_position, x_vision_actor), dim=1)
+        x = torch.cat((x_instruction_actor, x_joint_position, x_vision_actor), dim=1)
 
-        action_mean = self.actor(x_actor)
+        action_mean = self.actor(x)
 
         action_var = self.action_var.expand_as(action_mean).to(self.device)
         cov_mat = torch.diag_embed(action_var).to(self.device)
@@ -204,13 +252,13 @@ class ActorCritic(nn.Module):
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
 
-        x_instruction_critic = self.critic_instruction(state_instruction)
-        x_joint_position_critic = self.critic_joint_position(state_joint_position)
-        x_vision_critic = self.critic_vision(state_vision)
+        # x_instruction_critic = self.critic_instruction(state_instruction)
+        # x_joint_position_critic = self.critic_joint_position(state_joint_position)
+        # x_vision_critic = self.critic_vision(state_vision)
+        #
+        # x_critic = torch.cat((x_instruction_critic, x_joint_position_critic, x_vision_critic), dim=1)
 
-        x_critic = torch.cat((x_instruction_critic, x_joint_position_critic, x_vision_critic), dim=1)
-
-        state_value = self.critic(x_critic)
+        state_value = self.critic(x)
 
         return action_logprobs, torch.squeeze(state_value), dist_entropy
 
@@ -233,9 +281,7 @@ class ConvNet(nn.Module):
         self.relu2 = nn.LeakyReLU()
         self.maxpool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-        self.fc1 = nn.Linear(in_features=10092, out_features=256)
-        self.relu3 = nn.LeakyReLU()
-        self.fc2 = nn.Linear(in_features=256, out_features=num_output)
+        self.fc1 = nn.Linear(in_features=10092, out_features=num_output)
 
     def forward(self, x):
         # pass the input through our first set of CONV => RELU =>
@@ -252,8 +298,6 @@ class ConvNet(nn.Module):
         # through our only set of FC => RELU layers
         x = torch.flatten(x, 1)
         x = self.fc1(x)
-        x = self.relu3(x)
-        x = self.fc2(x)
 
         return x
 

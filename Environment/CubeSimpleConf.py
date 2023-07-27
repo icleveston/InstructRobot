@@ -44,11 +44,11 @@ class CubeSimpleConf(Conf):
         n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
         if n_collision_green:
-            return 10 * n_collision_green
+            return n_collision_green/6
         elif n_collision_red:
-            return -1 * n_collision_red
+            return -0.1 * n_collision_red/6
         elif n_collision_blue:
-            return -1 * n_collision_blue
+            return -0.1 * n_collision_blue/6
         else:
             return 0
 
@@ -57,11 +57,11 @@ class CubeSimpleConf(Conf):
         n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
         if n_collision_red:
-            return 10 * n_collision_red
+            return n_collision_red/6
         elif n_collision_blue:
-            return -1 * n_collision_blue
+            return -0.1 * n_collision_blue/6
         elif n_collision_green:
-            return -1 * n_collision_green
+            return -0.1 * n_collision_green/6
         else:
             return 0
 
@@ -70,11 +70,11 @@ class CubeSimpleConf(Conf):
         n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
         if n_collision_blue:
-            return 10 * n_collision_blue
+            return n_collision_blue/6
         elif n_collision_red:
-            return -1 * n_collision_red
+            return -0.1 * n_collision_red/6
         elif n_collision_green:
-            return -1 * n_collision_green
+            return -0.1 * n_collision_green/6
         else:
             return 0
 

@@ -18,13 +18,11 @@ class Environment:
         conf: Conf,
         trans_mean_std=None,
         headless: bool = True,
-        _change_inst_step: int = 1000,
         stack_obs: int = 3,
         random_seed: int = 1
     ):
 
         self._conf = conf
-        self._change_inst_step = _change_inst_step
         self._stack_obs = stack_obs
         self._random_seed = random_seed
 
@@ -144,7 +142,7 @@ class Environment:
         for i, o in enumerate(self._obs):
 
             # Convert joint position to tensor
-            joint_position_tensor[i] = torch.tensor(o[1], device="cuda")
+            joint_position_tensor[i] = torch.tensor(self.NAO.normalize(o[1], inverse=True), device="cuda")
 
             image_top = o[2]
             image_front = o[3]

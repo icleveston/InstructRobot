@@ -43,8 +43,6 @@ def _create_env(queues: (), n_steps, n_rollout, n_trajectory, conf, trans_mean_s
 
         for _ in range(n_rollout):
 
-            current_step += n_trajectory * n_rollout
-
             # Reset environment
             data = env.reset()
 
@@ -63,6 +61,8 @@ def _create_env(queues: (), n_steps, n_rollout, n_trajectory, conf, trans_mean_s
                 # Return obs and reward to main process
                 out_queue.put(data)
                 out_queue.join()
+
+        current_step += n_trajectory * n_rollout
 
 
 def _save_wandb(in_queue, resume, conf, model_name, images_path, loss_path, checkpoint_path):
@@ -204,17 +204,19 @@ class Main:
 
         # Training params
         self.conf = CubeSimpleConf()
-        self.n_steps = 1E6
+        self.n_steps = 3E6
         self.n_rollout = 16
         self.n_trajectory = 32
         self.current_step = 0
-        self.lr = 1e-4
+        self.lr_actor = 5e-5
+        self.lr_critic = 1e-4
         self.action_dim = 26
         self.action_std = 0.5
         self.betas = (0.9, 0.999)
         self.gamma = 0.99
-        self.k_epochs = 15
-        self.eps_clip = 0.2
+        self.lam = 0.95
+        self.k_epochs = 30
+        self.eps_clip = 0.25
 
         # Other params
         self.random_seed = 1
@@ -237,10 +239,6 @@ class Main:
 
             torch.cuda.manual_seed(self.random_seed)
 
-            self.num_workers = 1
-            self.pin_memory = True
-            self.preload = True
-
         else:
             self.device = torch.device("cpu")
 
@@ -250,9 +248,11 @@ class Main:
         self.agent = Agent(
             action_dim=self.action_dim,
             action_std=self.action_std,
-            lr=self.lr,
+            lr_actor=self.lr_actor,
+            lr_critic=self.lr_critic,
             betas=self.betas,
             gamma=self.gamma,
+            lam=self.lam,
             k_epochs=self.k_epochs,
             total_iters=self.n_steps // (self.n_rollout * self.n_trajectory),
             eps_clip=self.eps_clip,
@@ -270,8 +270,8 @@ class Main:
         self.out_queues = [JoinableQueue() for _ in range(self.n_rollout)]
 
         # Compute image mean and std
-        # self._compute_mean_std()
-        trans_mean_std = ([0.8517414331, 0.8405256271, 0.8349498510], [0.1922473758, 0.2080573738, 0.2201343030])
+        #self._compute_mean_std()
+        trans_mean_std = ([0.9167779088, 0.9104463458, 0.9062806368], [0.1605469137, 0.1718288660, 0.1843237430])
 
         # Create processes
         self.processes = [Process(target=_create_env, args=(q,
@@ -397,9 +397,9 @@ class Main:
                                           ))
                 self.in_queues_wandb.join()
 
-        # Wait all process to finish
-        [p.join() for p in self.processes]
-        self.process_wandb.join()
+        # Kill all process
+        [p.kill() for p in self.processes]
+        self.process_wandb.kill()
 
         toc = time.time()
 
@@ -421,6 +421,7 @@ class Main:
         reward_array = [[] for _ in range(self.n_rollout)]
         action_array = [[] for _ in range(self.n_rollout)]
         logprob_array = [[] for _ in range(self.n_rollout)]
+        old_state_value_array = [[] for _ in range(self.n_rollout)]
         is_terminals_array = [[] for _ in range(self.n_rollout)]
         training_data_array = [[] for _ in range(self.n_rollout)]
 
@@ -439,7 +440,7 @@ class Main:
             obs_rollout.append(training_data_array[random_sample_index][j])
 
             # Select action from the agent
-            actions, logprobs = self.agent.select_action([s[-1] for s in states_array])
+            actions, logprobs, old_state_value = self.agent.select_action([s[-1] for s in states_array])
 
             # Send actions to environments
             for in_index, in_q in enumerate(self.in_queues):
@@ -454,6 +455,7 @@ class Main:
                 reward_array[r].append(reward)
                 action_array[r].append(actions[r])
                 logprob_array[r].append(logprobs[r])
+                old_state_value_array[r].append(old_state_value[r])
                 is_terminals_array[r].append(0 if j != self.n_trajectory - 1 else 1)
                 if j != self.n_trajectory-1:
                     states_array[r].append(new_state)
@@ -464,6 +466,7 @@ class Main:
         for r in range(self.n_rollout):
             self.memory.rewards += reward_array[r]
             self.memory.states += states_array[r]
+            self.memory.old_state_values += old_state_value_array[r]
             self.memory.actions += action_array[r]
             self.memory.logprobs += logprob_array[r]
             self.memory.is_terminals += is_terminals_array[r]
@@ -580,9 +583,10 @@ class Main:
         # Compose the transformations
         trans = transforms.Compose([
             transforms.ToTensor(),
+            transforms.Resize((128, 64))
         ])
 
-        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 128, 512), dtype=torch.float)
+        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 128, 64), dtype=torch.float)
 
         index = 0
 
@@ -594,16 +598,11 @@ class Main:
 
             for o in obs:
                 image_top = o[2]
-                image_front = o[3]
 
                 # Convert state to tensor
                 image_top_tensor = trans(image_top)
-                image_font_tensor = trans(image_front)
 
-                # Cat all images into a single one
-                images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)
-
-                image_tensor[index] = images_stacked
+                image_tensor[index] = image_top_tensor
 
                 index += 1
 

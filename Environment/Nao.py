@@ -5,13 +5,6 @@ import numpy as np
 import math
 
 
-def normalize(x, old_range, new_range):
-
-    norm = (x - old_range[0]) / (old_range[1] - old_range[0])
-
-    return norm * (new_range[1] - new_range[0]) + new_range[0]
-
-
 class Nao:
     def __init__(self):
 
@@ -115,6 +108,11 @@ class Nao:
 
     def make_action(self, actions):
 
+        # Bound actions
+        actions = np.tanh(actions)
+
+        actions = self.normalize(actions)
+
         for joint_handle, action in zip(self._joint_handles, actions):
             sim.simSetJointTargetPosition(joint_handle, action)
 
@@ -150,3 +148,16 @@ class Nao:
                 counter += 1
 
         return counter
+
+    def normalize(self, x, inverse=False):
+
+        if inverse:
+            old_range = self.new_range
+            new_range = self.old_range
+        else:
+            old_range = self.old_range
+            new_range = self.new_range
+
+        norm = (x - old_range[0]) / (old_range[1] - old_range[0])
+
+        return norm * (new_range[1] - new_range[0]) + new_range[0]

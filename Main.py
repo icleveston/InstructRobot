@@ -18,6 +18,8 @@ import wandb
 from Agent import Agent, Memory
 from Environment import Environment
 from Environment.CubeSimpleConf import CubeSimpleConf
+from multiprocessing import Process, JoinableQueue
+import multiprocessing
 
 torch.set_printoptions(threshold=10_000)
 
@@ -27,31 +29,69 @@ torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=Fal
 def percentage_error_formula(x, amount_variation): round(x / amount_variation * 100, 3)
 
 
-def online_mean_and_sd(images):
-    cnt = 0
-    fst_moment = torch.empty(3)
-    snd_moment = torch.empty(3)
+def _save_wandb(in_queue, resume, conf, model_name, images_path, loss_path, checkpoint_path):
+    # Init Wandb
+    wandb.init(
+        project=str(conf),
+        name=model_name,
+        id=model_name,
+        resume=resume
+    )
 
-    b, c, h, w = images.shape
-    nb_pixels = b * h * w
-    sum_ = torch.sum(images, dim=[0, 2, 3])
-    sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
-    fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
-    snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
+    while True:
+        data = in_queue.get()
+        in_queue.task_done()
 
-    cnt += nb_pixels
+        # Unpack data
+        mean_episodic_return, loss, lr, eps, action_std, observations, current_step, agent_state, optim_state, \
+            scheduler_state, best_mean_episodic_return = data
 
-    return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)
+        # Unpack observations
+        #actions = []
+        #observations = []
 
+        #for r in obs_rollout:
+            #actions.append(r[0].cpu().data.numpy())
+            #observations.append(r[1])
 
-def parse_arguments():
-    arg = argparse.ArgumentParser()
-    arg.add_argument("--test", type=str, required=False, help="should train or test")
-    arg.add_argument("--resume", type=str, required=False, help="should resume the train")
+        # Log Wandb
+        wandb.log(
+            {
+                "mean_episodic_return": mean_episodic_return,
+                "loss/actor": loss[0],
+                "loss/entropy": loss[1],
+                "loss/critic": loss[2],
+                "lr": np.float32(lr),
+                "action_std": np.float32(action_std),
+                "eps": np.float32(eps),
+                "video": wandb.Video(_format_video_wandb(observations), fps=8),
+                #f"actions-{current_step}": wandb.Table(columns=[f"a{i}" for i in range(26)], data=actions)
+            }, step=current_step)
 
-    args = vars(arg.parse_args())
+        # Dump observation data
+        with open(os.path.join(images_path, f"observation.p"), "wb") as f:
+            pickle.dump(observations, f)
 
-    return args
+        row = [loss[0], loss[1], loss[2], mean_episodic_return]
+
+        # Save training history
+        with open(os.path.join(loss_path, 'history.csv'), 'a') as f_object:
+            writer_object = writer(f_object)
+            writer_object.writerow(row)
+            f_object.close()
+
+        is_best = mean_episodic_return > best_mean_episodic_return
+
+        # Save the checkpoint for each rollout
+        _save_checkpoint({
+            "current_step": current_step,
+            "best_mean_episodic_return": best_mean_episodic_return,
+            "model_state": agent_state,
+            "optim_state": optim_state,
+            "scheduler_state": scheduler_state,
+            "eps_clip": eps,
+            "action_std": action_std,
+        }, checkpoint_path, is_best)
 
 
 def _format_video_wandb(last_obs_rollout) -> np.array:
@@ -82,6 +122,46 @@ def _format_video_wandb(last_obs_rollout) -> np.array:
     return video
 
 
+def _save_checkpoint(state, checkpoint_path, is_best):
+    # Set the checkpoint path
+    ckpt_path = os.path.join(checkpoint_path, "checkpoint.tar")
+
+    # Save the checkpoint
+    torch.save(state, ckpt_path)
+
+    # Save the best model
+    if is_best:
+        # Copy the checkpoint to the best model
+        shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_model.tar"))
+
+
+def online_mean_and_sd(images):
+    cnt = 0
+    fst_moment = torch.empty(3)
+    snd_moment = torch.empty(3)
+
+    b, c, h, w = images.shape
+    nb_pixels = b * h * w
+    sum_ = torch.sum(images, dim=[0, 2, 3])
+    sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
+    fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
+    snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
+
+    cnt += nb_pixels
+
+    return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)
+
+
+def parse_arguments():
+    arg = argparse.ArgumentParser()
+    arg.add_argument("--test", type=str, required=False, help="should train or test")
+    arg.add_argument("--resume", type=str, required=False, help="should resume the train")
+
+    args = vars(arg.parse_args())
+
+    return args
+
+
 class Main:
 
     def __init__(self):
@@ -92,13 +172,13 @@ class Main:
         self.n_rollout = 24
         self.n_trajectory = 32
         self.current_step = 0
-        self.lr = 1e-5
+        self.lr = 1e-4
         self.action_dim = 26
         self.action_std = 0.5
         self.betas = (0.9, 0.999)
         self.gamma = 0.99
-        self.k_epochs = 60
-        self.eps_clip = 0.2
+        self.k_epochs = 20
+        self.eps_clip = 0.25
 
         # Other params
         self.random_seed = 1
@@ -139,6 +219,7 @@ class Main:
             gamma=self.gamma,
             K_epochs=self.k_epochs,
             eps_clip=self.eps_clip,
+            total_iters=self.n_steps // (self.n_rollout * self.n_trajectory),
             device=self.device
         )
 
@@ -164,6 +245,10 @@ class Main:
             transforms.Resize((128, 64)),
             transforms.Normalize(mean, std)
         ])
+
+        # Wandb queue and process
+        self.in_queues_wandb = JoinableQueue()
+        self.process_wandb = None
 
     def train(self, resume=None):
 
@@ -206,12 +291,15 @@ class Main:
             # Load the model
             self._load_checkpoint(best=False)
 
-        # Init Wandb
-        wandb.init(
-            project=str(self.conf),
-            name=model_name,
-            id=model_name
-        )
+        # Start wandb process
+        self.process_wandb = Process(target=_save_wandb, args=(self.in_queues_wandb,
+                                                               resume is not None,
+                                                               self.conf,
+                                                               model_name,
+                                                               self.images_path,
+                                                               self.loss_path,
+                                                               self.checkpoint_path))
+        self.process_wandb.start()
 
         print(f"[*] Output Folder: {model_name}")
         print(f"[*] Total Trainable Params: {self.num_parameters}")
@@ -220,6 +308,7 @@ class Main:
         with tqdm(total=self.n_steps) as pbar:
 
             while self.current_step < self.n_steps:
+
                 # Train one rollout
                 mean_episodic_return, loss, obs_rollout = self._train_one_rollout()
 
@@ -229,47 +318,49 @@ class Main:
                 toc = time.time()
 
                 # Set the var description
-                pbar.set_description(("{:.1f}s - step: {:.1f} - loss: {:.6f} - return: {:.6f}".
+                pbar.set_description(("{:.1f}s "
+                                      "- step: {:.1f} "
+                                      "- loss actor: {:.6f} "
+                                      "- loss critic: {:.6f} "
+                                      "- loss entropy: {:.6f} "
+                                      "- return: {:.6f}".
                                       format((toc - tic),
                                              self.current_step,
-                                             loss,
+                                             loss[0],
+                                             loss[2],
+                                             loss[1],
                                              mean_episodic_return)))
 
                 # Update the bar
                 pbar.update(self.current_step)
 
-                # Log Wandb
-                wandb.log(
-                    {
-                        "charts/mean_episodic_return": mean_episodic_return,
-                        "charts/loss": loss,
-                        "video": wandb.Video(_format_video_wandb(obs_rollout), fps=8)
-                    }, step=self.current_step)
-
                 # Check if it is the best model
-                is_best = mean_episodic_return > self.best_mean_episodic_return
-
                 self.best_mean_episodic_return = max(mean_episodic_return, self.best_mean_episodic_return)
 
-                # Save the checkpoint for each rollout
-                self._save_checkpoint({
-                    "current_step": self.current_step,
-                    "best_mean_episodic_return": self.best_mean_episodic_return,
-                    "model_state": self.agent.policy.state_dict(),
-                    "optim_state": self.agent.optimizer.state_dict(),
-                }, is_best)
+                # Get states
+                agent_state = self.agent.policy.state_dict()
+                optim_state = self.agent.optimizer.state_dict()
+                scheduler_state = self.agent.scheduler.state_dict()
 
-                # Dump observation data
-                with open(os.path.join(self.images_path, f"observation.p"), "wb") as f:
-                    pickle.dump(obs_rollout, f)
+                # Send data to wandb process
+                self.in_queues_wandb.put((mean_episodic_return,
+                                          loss,
+                                          self.agent.scheduler.get_last_lr()[0],
+                                          self.agent.eps_clip,
+                                          self.agent.policy.action_std,
+                                          obs_rollout,
+                                          self.current_step,
+                                          agent_state,
+                                          optim_state,
+                                          scheduler_state,
+                                          self.best_mean_episodic_return
+                                          ))
 
-                row = [loss, mean_episodic_return]
+                self.in_queues_wandb.join()
 
-                # Save training history
-                with open(os.path.join(self.loss_path, 'history.csv'), 'a') as f_object:
-                    writer_object = writer(f_object)
-                    writer_object.writerow(row)
-                    f_object.close()
+        # Kill all process
+        [p.kill() for p in self.processes]
+        self.process_wandb.kill()
 
         toc = time.time()
 
@@ -326,7 +417,7 @@ class Main:
                 state = (instruction_index, image)
 
                 # Select action from the agent
-                action, logprob = self.agent.select_action(state)
+                action, logprob, old_state_value = self.agent.select_action(state)
 
                 # Execute action in the simulator
                 new_observation, reward = self.env.step(action.squeeze())
@@ -336,6 +427,7 @@ class Main:
                 self.memory.states.append(state)
                 self.memory.actions.append(action.squeeze())
                 self.memory.logprobs.append(logprob.squeeze())
+                self.memory.old_state_value.append(old_state_value.squeeze())
                 self.memory.is_terminals.append(j == self.n_trajectory - 1)
 
                 # Update observation
@@ -345,12 +437,15 @@ class Main:
         mean_episodic_return = sum(self.memory.rewards) / len(self.memory.rewards)
 
         # Update the weights
-        loss = self.agent.update(self.memory)
+        loss_actor, loss_entropy, loss_critic = self.agent.update(self.memory)
+
+        # Pack loss
+        loss = (loss_actor.cpu().data.numpy(), loss_entropy.cpu().data.numpy(), loss_critic.cpu().data.numpy())
 
         # Clear the memory
         self.memory.clear_memory()
 
-        return mean_episodic_return, loss.cpu().data.numpy(), obs_rollout
+        return mean_episodic_return, loss, obs_rollout
 
     def _build_vocab(self, instruction_set):
 
@@ -403,19 +498,6 @@ class Main:
 
         if print_table:
             print(table)
-
-    def _save_checkpoint(self, state, is_best):
-
-        # Set the checkpoint path
-        ckpt_path = os.path.join(self.checkpoint_path, "checkpoint.tar")
-
-        # Save the checkpoint
-        torch.save(state, ckpt_path)
-
-        # Save the best model
-        if is_best:
-            # Copy the checkpoint to the best model
-            shutil.copyfile(ckpt_path, os.path.join(self.checkpoint_path, "best_model.tar"))
 
     def _load_checkpoint(self, best=False):
 
@@ -498,6 +580,8 @@ class Main:
 
 
 if __name__ == "__main__":
+
+    multiprocessing.set_start_method('spawn')
 
     args = parse_arguments()
 

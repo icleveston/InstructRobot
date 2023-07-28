@@ -94,7 +94,7 @@ class Main:
         self.current_step = 0
         self.lr = 1e-5
         self.action_dim = 26
-        self.action_std = 0.6
+        self.action_std = 0.5
         self.betas = (0.9, 0.999)
         self.gamma = 0.99
         self.k_epochs = 60
@@ -124,10 +124,6 @@ class Main:
             self.device = torch.device("cuda")
 
             torch.cuda.manual_seed(self.random_seed)
-
-            self.num_workers = 1
-            self.pin_memory = True
-            self.preload = True
 
         else:
             self.device = torch.device("cpu")

@@ -135,7 +135,7 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 1)
         )
 
-        self.action_var = torch.full((action_dim,), action_std * action_std).to(self.device)
+        self.action_var = torch.full((action_dim,), action_std).to(self.device)
 
     def forward(self):
         raise NotImplementedError
@@ -150,7 +150,7 @@ class ActorCritic(nn.Module):
         action_mean = self.actor(x)
         cov_mat = torch.diag(self.action_var).to(self.device)
 
-        dist = MultivariateNormal(action_mean, cov_mat)
+        dist = MultivariateNormal(action_mean, cov_mat, validate_args=False)
         action = dist.sample()
         action_logprob = dist.log_prob(action)
 
@@ -168,7 +168,7 @@ class ActorCritic(nn.Module):
         action_var = self.action_var.expand_as(action_mean).to(self.device)
         cov_mat = torch.diag_embed(action_var).to(self.device)
 
-        dist = MultivariateNormal(action_mean, cov_mat)
+        dist = MultivariateNormal(action_mean, cov_mat, validate_args=False)
 
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()

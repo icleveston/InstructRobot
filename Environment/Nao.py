@@ -27,8 +27,6 @@ class Nao:
         ) = self.get_joint_positions()
 
         joint_limits = {
-            "NAO_head_joint1": [-119.5, 119.5],
-            "NAO_head_joint2": [-38.5, 29.5],
             "NAO_rightArm_joint1": [-119.5, 119.5],
             "NAO_rightArm_joint2": [-76, 18],
             "NAO_rightArm_joint3": [-119.5, 119.5],

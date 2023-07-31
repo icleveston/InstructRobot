@@ -417,7 +417,7 @@ class Main:
                 state = (instruction_index, image)
 
                 # Select action from the agent
-                action, logprob, old_state_value = self.agent.select_action(state)
+                action, logprob = self.agent.select_action(state)
 
                 # Execute action in the simulator
                 new_observation, reward = self.env.step(action.squeeze())
@@ -427,7 +427,6 @@ class Main:
                 self.memory.states.append(state)
                 self.memory.actions.append(action.squeeze())
                 self.memory.logprobs.append(logprob.squeeze())
-                self.memory.old_state_value.append(old_state_value.squeeze())
                 self.memory.is_terminals.append(j == self.n_trajectory - 1)
 
                 # Update observation

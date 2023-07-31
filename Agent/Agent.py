@@ -58,7 +58,6 @@ class Agent:
         # Convert list to tensor
         old_actions = torch.squeeze(torch.stack(memory.actions, dim=0)).detach().to(self.device)
         old_logprobs = torch.squeeze(torch.stack(memory.logprobs, dim=0)).detach().to(self.device)
-        old_state_values = torch.squeeze(torch.stack(memory.old_state_value, dim=0)).detach().to(self.device)
 
         # Separate states
         state_instruction = []
@@ -70,9 +69,6 @@ class Agent:
         old_instruction_states = torch.squeeze(torch.stack(state_instruction, dim=0)).detach().to(self.device)
         old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
 
-        # Finding Surrogate Loss:
-        advantages = rewards - old_state_values.detach()
-
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
             # Evaluating old actions and values :
@@ -81,6 +77,8 @@ class Agent:
 
             # Finding the ratio (pi_theta / pi_theta__old):
             ratios = torch.exp(logprobs - old_logprobs)
+
+            advantages = rewards - state_values.detach()
 
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
@@ -107,7 +105,6 @@ class Memory:
         self.actions = []
         self.states = []
         self.logprobs = []
-        self.old_state_value = []
         self.rewards = []
         self.is_terminals = []
 
@@ -115,7 +112,6 @@ class Memory:
         del self.actions[:]
         del self.states[:]
         del self.logprobs[:]
-        del self.old_state_value[:]
         del self.rewards[:]
         del self.is_terminals[:]
 
@@ -169,9 +165,7 @@ class ActorCritic(nn.Module):
         action = dist.sample()
         action_logprob = dist.log_prob(action)
 
-        state_value = self.critic(x)
-
-        return action.detach(), action_logprob, torch.squeeze(state_value)
+        return action.detach(), action_logprob
 
     def evaluate(self, state_instruction, state_vision, action):
 

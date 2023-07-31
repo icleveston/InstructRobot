@@ -8,7 +8,7 @@ from torch.distributions import MultivariateNormal
 
 
 class Agent:
-    def __init__(self, action_dim, action_std, lr, betas, gamma, K_epochs, eps_clip, device):
+    def __init__(self, action_dim, action_std, lr, betas, gamma, K_epochs, eps_clip, total_iters, device):
         self.lr = lr
         self.betas = betas
         self.gamma = gamma
@@ -19,10 +19,17 @@ class Agent:
         self.policy = ActorCritic(action_dim, action_std, self.device).to(self.device)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
 
+        self.scheduler = torch.optim.lr_scheduler.LinearLR(
+            self.optimizer,
+            start_factor=1,
+            end_factor=0,
+            total_iters=total_iters
+        )
+
         self.policy_old = ActorCritic(action_dim, action_std, self.device).to(self.device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-        self.MseLoss = nn.MSELoss()
+        self.critic_loss = nn.MSELoss()
 
     def select_action(self, state):
 
@@ -62,22 +69,25 @@ class Agent:
         old_instruction_states = torch.squeeze(torch.stack(state_instruction, dim=0)).detach().to(self.device)
         old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
 
-        loss = 0
-
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
             # Evaluating old actions and values :
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states, old_vision_states, old_actions)
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states, old_vision_states,
+                                                                        old_actions)
 
             # Finding the ratio (pi_theta / pi_theta__old):
             ratios = torch.exp(logprobs - old_logprobs)
 
-            # Finding Surrogate Loss:
             advantages = rewards - state_values.detach()
+
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
 
-            loss = -torch.min(surr1, surr2) - 0.01 * dist_entropy + 0.5 * self.MseLoss(state_values, rewards)
+            loss_actor = -torch.min(surr1, surr2)
+            loss_entropy = -0.01 * dist_entropy
+            loss_critic = 0.5 * self.critic_loss(state_values, rewards)
+
+            loss = loss_actor + loss_entropy + loss_critic
 
             # take gradient step
             self.optimizer.zero_grad()
@@ -87,7 +97,7 @@ class Agent:
         # Copy new weights into old policy:
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-        return loss.mean()
+        return loss_actor.mean(), loss_entropy.mean(), loss_critic.mean()
 
 
 class Memory:
@@ -111,7 +121,7 @@ class ActorCritic(nn.Module):
         super(ActorCritic, self).__init__()
 
         self.device = device
-
+        self.action_std = action_std
         self.actor_vision = ConvNet(12, 250)
         self.actor_instruction = Transformer()
 
@@ -128,6 +138,7 @@ class ActorCritic(nn.Module):
         self.critic_instruction = Transformer()
 
         self.critic = nn.Sequential(
+            nn.Tanh(),
             nn.Linear(500, 256),
             nn.Tanh(),
             nn.Linear(256, 128),
@@ -135,7 +146,7 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 1)
         )
 
-        self.action_var = torch.full((action_dim,), action_std).to(self.device)
+        self.action_var = torch.full((action_dim,), self.action_std).to(self.device)
 
     def forward(self):
         raise NotImplementedError

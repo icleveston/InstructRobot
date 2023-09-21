@@ -7,7 +7,7 @@ class CubeSimpleConf(Conf):
 
     def __init__(self):
 
-        scene_file = 'Scenes/Cubes_Simple.ttt'
+        scene_file = 'Scenes/Cubes_Simple_old.ttt'
 
         instructions_set = (
             ("Touch the blue cube.", self._touch_blue_cube),

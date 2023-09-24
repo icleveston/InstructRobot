@@ -1,120 +1,236 @@
-from pyrep.backend import sim
-from pyrep.robots.arms.nao_arm import NAOLeftArm, NAORightArm
-from pyrep.robots.end_effectors.nao_hand import NAOHand
-import numpy as np
 import math
+import time
+from typing import List
+import numpy as np
+from pyrep.objects.joint import Joint
+from pyrep.objects.shape import Shape, PrimitiveShape
+
+
+def vectorized_to_interval(limits: np.array, actions: np.array) -> np.array:
+    """
+    Converts a vector of actions in the range (-1, 1) to the range given by
+    limits array
+
+    Args:
+        limits: the limits for which the actions will be scaled
+        actions: the action in the range (-1, 1)
+    """
+    # Actions ranges in (-1, 1)
+    min_, max_ = -1, 1
+    a, b = limits[:, 0], limits[:, 1]
+
+    return ((b - a) * (actions - min_) / (max_ - min_)) + a
 
 
 class Nao:
     def __init__(self):
 
-        self.leftArm = NAOLeftArm()
-        self.rightArm = NAORightArm()
-        self.leftHand = NAOHand()
-        self.rightHand = NAOHand()
-
-        self.leftArm.set_motor_locked_at_zero_velocity(True)
-        self.rightArm.set_motor_locked_at_zero_velocity(True)
-        self.leftHand.set_motor_locked_at_zero_velocity(True)
-        self.rightHand.set_motor_locked_at_zero_velocity(True)
-
-        self.left_tips, self.right_tips = self.get_hand_tip()
-        (
-            self.leftArm.initial_joints_positions,
-            self.leftHand.initial_joints_positions,
-            self.rightArm.initial_joints_positions,
-            self.rightHand.initial_joints_positions
-        ) = self.get_joint_positions()
-
-        joint_limits = {
-            "NAO_rightArm_joint1": [-119.5, 119.5],
-            "NAO_rightArm_joint2": [-76, 18],
-            "NAO_rightArm_joint3": [-119.5, 119.5],
-            "NAO_rightArm_joint4": [2, 88.5],
-            "NAO_rightArm_joint5": [-104.5, 104.5],
-            "NAOHand_thumb1#0": [0, 60],
-            "NAOHand_thumb2#0": [0, 60],
-            "NAOHand_rightJoint1#0": [0, 60],
-            "NAOHand_rightJoint2#0": [0, 60],
-            "NAOHand_rightJoint3#0": [0, 60],
-            "NAOHand_leftJoint1#0": [0, 60],
-            "NAOHand_leftJoint2#0": [0, 60],
-            "NAOHand_leftJoint3#0": [0, 60],
-            "NAO_leftArm_joint1": [-119.5, 119.5],
-            "NAO_leftArm_joint2": [-18, 76],
-            "NAO_leftArm_joint3": [-119.5, 119.5],
-            "NAO_leftArm_joint4": [-88.5, -2],
-            "NAO_leftArm_joint5": [-104.5, 104.5],
-            "NAOHand_thumb1": [0, 60],
-            "NAOHand_thumb2": [0, 60],
-            "NAOHand_rightJoint1": [0, 60],
-            "NAOHand_rightJoint2": [0, 60],
-            "NAOHand_rightJoint3": [0, 60],
-            "NAOHand_leftJoint1": [0, 60],
-            "NAOHand_leftJoint2": [0, 60],
-            "NAOHand_leftJoint3": [0, 60]
+        _joints_info_deg = {
+            "/NAO/LShoulderPitch": (-1.195e+02, 2.390e+02),
+            "/NAO/LShoulderRoll": (-1.800e+01, 9.401e+01),
+            "/NAO/LElbowYaw": (-1.195e+02, 2.390e+02),
+            "/NAO/LElbowRoll": (-8.850e+01, 8.650e+01),
+            "/NAO/LWristYaw": (-1.045e+02, 2.090e+02),
+            "/NAO/LThumbBase": (+0.000e+00, 6.000e+01),
+            "/NAO/LShoulderPitch/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/LRFingerBase": (+0.000e+00, 6.000e+01),
+            "/NAO/LRFingerBase/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/LShoulderPitch/joint/Cuboid/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/LLFingerBase": (+0.000e+00, 6.000e+01),
+            "/NAO/LLFingerBase/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/LLFingerBase/joint/Cuboid/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/RShoulderPitch": (-1.195e+02, 2.390e+02),
+            "/NAO/RShoulderRoll": (-7.600e+01, 9.401e+01),
+            "/NAO/RElbowYaw": (-1.195e+02, 2.390e+02),
+            "/NAO/RElbowRoll": (+2.000e+00, 8.650e+01),
+            "/NAO/RWristYaw": (-1.045e+02, 2.090e+02),
+            "/NAO/RThumbBase": (+0.000e+00, 6.000e+01),
+            "/NAO/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/RRFingerBase": (+0.000e+00, 6.000e+01),
+            "/NAO/RRFingerBase/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/joint/Cuboid/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/RLFingerBase": (+0.000e+00, 6.000e+01),
+            "/NAO/RLFingerBase/joint": (+0.000e+00, 6.000e+01),
+            "/NAO/RLFingerBase/joint/Cuboid/joint": (+0.000e+00, 6.000e+01)
         }
 
-        joint_names = joint_limits.keys()
+        _joints_info_rad = {
+            name: (np.radians(limits[0]), np.radians(limits[1])) for name, limits in _joints_info_deg.items()
+        }
 
-        low_act = []
-        high_act = []
-        for joint in joint_names:
-            low_act.append(joint_limits[joint][0])
-            high_act.append(joint_limits[joint][1])
-
-        self.low_act = np.array(low_act) * math.pi / 180
-        self.high_act = np.array(high_act) * math.pi / 180
-
-        fingers_names = [
-            "NAOHand_thumb2_visible",
-            "NAOHand_rightJoint3_visible",
-            "NAOHand_leftJoint3_visible",
-            "NAOHand_thumb2_visible#0",
-            "NAOHand_rightJoint3_visible#0",
-            "NAOHand_leftJoint3_visible#0"
+        _fingers_names = [
+            "Cuboid0",
+            "Cuboid15",
+            "Cuboid14",
+            "Cuboid4",
+            "Cuboid2",
+            "Cuboid12",
+            "Cuboid10",
+            "Cuboid11",
+            "Cuboid6",
+            "Cuboid13",
+            "Cuboid9",
+            "Cuboid7",
+            "Cuboid8",
+            "Cuboid",
+            "Cuboid3",
+            "Cuboid1",
         ]
 
-        self._fingers_handles = [sim.simGetObjectHandle(i) for i in fingers_names]
+        self._all_joints: List[Joint] = []
+        self._all_fingers: List[Shape] = []
+        self._joint_limits: np.array = []
+        self._head = Shape(name_or_handle='HeadPitch_link_respondable')
+        self._chest = Shape(name_or_handle='imported_part_20_sub0')
 
-        self._joint_handles = list(map(sim.simGetObjectHandle, joint_names))
+        joint_limits = []
+        for name, limits in _joints_info_rad.items():
+            joint = Joint(name_or_handle=name)
+            joint.set_control_loop_enabled(True)
+            joint.set_motor_locked_at_zero_velocity(True)
+            self._all_joints.append(joint)
 
-    def get_low_act(self):
-        return self.low_act
+            joint_limits.append((limits[0], limits[1] + limits[0]))
 
-    def get_high_act(self):
-        return self.high_act
+        self._joint_limits = np.array(joint_limits)
 
-    def get_joint_positions(self):
-        return self.leftArm.get_joint_positions(), self.leftHand.get_joint_positions(), \
-            self.rightArm.get_joint_positions(), self.rightHand.get_joint_positions()
+        for finger_name in _fingers_names:
+            shape = Shape(name_or_handle=finger_name)
+            self._all_fingers.append(shape)
 
-    def get_hand_tip(self):
-        return self.leftArm.get_tip(), self.rightArm.get_tip()
+    def get_joint_positions(self) -> np.array:
 
-    def get_tip_position(self):
-        return self.left_tips.get_position(), self.right_tips.get_position()
+        joint_positions = [
+            joint.get_joint_position() for joint in self._all_joints
+        ]
 
-    def make_action(self, actions):
-        for joint_handle, action in zip(self._joint_handles, actions):
-            sim.simSetJointTargetPosition(joint_handle, action)
+        return np.array(joint_positions)
 
-    def set_joint_positions(self, left_positions, left_hand_positions, right_positions, right_hand_positions):
-        self.leftArm.set_joint_positions(left_positions)
-        self.leftHand.set_joint_positions(left_hand_positions)
-        self.rightArm.set_joint_positions(right_positions)
-        self.rightHand.set_joint_positions(right_hand_positions)
+    def make_action(self, action: []) -> None:
 
-    def set_initial_joint_positions(self):
-        self.set_joint_positions(self.leftArm.initial_joints_positions,
-                                 self.leftHand.initial_joints_positions,
-                                 self.rightArm.initial_joints_positions,
-                                 self.rightHand.initial_joints_positions)
+        # action = vectorized_to_interval(self.joint_limits, np.tanh(np.array(action)))
 
-    def check_collisions(self, object_handle) -> bool:
+        for target_position, joint in zip(action, self._all_joints):
+            joint.set_joint_target_position(target_position)
 
-        for joint in self._fingers_handles:
-            if sim.simCheckCollision(joint, object_handle):
-                return True
+    def check_collisions(self, object_shape: Shape) -> ():
 
-        return False
+        collision_array = {}
+
+        for finger in self._all_fingers:
+            collision_array[finger.get_name()] = int(finger.check_collision(object_shape))
+
+        return sum(collision_array.values()), collision_array
+
+    def validate_joints(self, joint_position_step=0.005):
+
+        # Test each joint independently
+        for i, joint_limits in enumerate(self._joint_limits):
+
+            is_new_joint = True
+
+            # Increase the joint position
+            joint_values = np.arange(joint_limits[0], joint_limits[1], joint_position_step)
+
+            for joint_value in joint_values:
+                action = np.zeros(26)
+                action[i] = joint_value
+
+                yield is_new_joint, action
+
+                is_new_joint = False
+
+    def validate_collisions(self,
+                            joint_shoulder_left_id=0,
+                            joint_elbow_left_id=2,
+                            joint_wrist_left_id=4,
+                            joint_shoulder_right_id=13,
+                            joint_elbow_right_id=15,
+                            joint_wrist_right_id=17,
+                            hand_left_id=0,
+                            joint_position_step=0.05):
+
+        # Get wrist and elbow joints
+        joints = [
+            (joint_shoulder_left_id, self._joint_limits[joint_shoulder_left_id][0]/10),
+            (joint_elbow_left_id, self._joint_limits[joint_elbow_left_id][0]),
+            (joint_wrist_left_id, self._joint_limits[joint_wrist_left_id][0]/1.8),
+            (joint_shoulder_right_id, self._joint_limits[joint_shoulder_right_id][0]/10),
+            (joint_elbow_right_id, self._joint_limits[joint_elbow_right_id][1]),
+            (joint_wrist_right_id, self._joint_limits[joint_wrist_right_id][1]/1.8)
+        ]
+
+        action = np.zeros(26)
+
+        # Move joints to desired position
+        for i, limit in joints:
+
+            for _ in range(20):
+                action[i] = limit
+                yield action
+
+        # Get hands position
+        hands = [
+            (hand_left_id, self._joint_limits[hand_left_id][0], [-0.05, 0, 0.1], [math.pi, math.pi, 0]),
+        ]
+
+        for i, hand, position_shift, orientation_shift in hands:
+
+            position = self._all_fingers[i].get_position()
+            position[0] += position_shift[0]
+            position[1] = 0
+            position[2] += position_shift[2]
+
+            # Create test cube
+            cube: Shape = Shape.create(
+                PrimitiveShape.CUBOID,
+                mass=0.3,
+                size=[0.1, 1, 0.003],
+                position=position,
+                orientation=orientation_shift
+            )
+            
+            # Set cube properties
+            cube.set_collidable(True)
+            cube.set_measurable(True)
+            cube.set_detectable(True)
+            cube.set_respondable(True)
+
+            print(f"IsDynamic: {cube.is_dynamic()} -"
+                  f" IsRespondable: {cube.is_respondable()} -"
+                  f" IsCollidable: {cube.is_collidable()} -"
+                  f" IsMesurable: {cube.is_measurable()} -"
+                  f" IsDetectable: {cube.is_detectable()}")
+
+        fingers = zip(reversed(range(5,13)), reversed(self._joint_limits[5:13]))
+
+        # Close hands
+        for i, limits in fingers:
+
+            # Increase the joint position
+            joint_values = np.arange(limits[0], limits[1], joint_position_step)
+
+            for joint_value in joint_values:
+                action[i] = joint_value
+                print(f"Detected Collisions: {self.check_collisions(cube)[0]}")
+                yield action
+
+        fingers = zip(reversed(range(18, 26)), reversed(self._joint_limits[18:26]))
+
+        # Close hands
+        for i, limits in fingers:
+
+            # Increase the joint position
+            joint_values = np.arange(limits[0], limits[1], joint_position_step)
+
+            for joint_value in joint_values:
+                action[i] = joint_value
+                print(f"Detected Collisions: {self.check_collisions(cube)[0]}")
+                yield action
+
+        for _ in range(100):
+            yield action
+            print(f"Detected Collisions: {self.check_collisions(cube)[0]}")
+
+        time.sleep(120)
+

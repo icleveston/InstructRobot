@@ -1,170 +1,25 @@
-import argparse
-import os
-import pickle
 import random
-import shutil
 import time
-from csv import writer
-import numpy as np
 import pandas as pd
-import torch
-from PIL import Image, ImageFont, ImageDraw
 from prettytable import PrettyTable
 from torchtext.data import get_tokenizer
 from torchtext.vocab import build_vocab_from_iterator
-from torchvision import transforms
 from tqdm import tqdm
-import wandb
 from Agent import Agent, Memory
 from Environment import Environment
 from Environment.CubeSimpleConf import CubeSimpleConf
 from multiprocessing import Process, JoinableQueue
 import multiprocessing
+from Utils import *
 
 torch.set_printoptions(threshold=10_000)
 
 torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=False)
 
 
-def percentage_error_formula(x, amount_variation): round(x / amount_variation * 100, 3)
-
-
-def _save_wandb(in_queue, resume, conf, model_name, images_path, loss_path, checkpoint_path):
-    # Init Wandb
-    wandb.init(
-        project=str(conf),
-        name=model_name,
-        id=model_name,
-        resume=resume
-    )
-
-    while True:
-        data = in_queue.get()
-        in_queue.task_done()
-
-        # Unpack data
-        mean_episodic_return, loss, lr, eps, action_std, observations, current_step, agent_state, optim_state, \
-            scheduler_state, best_mean_episodic_return = data
-
-        # Unpack observations
-        #actions = []
-        #observations = []
-
-        #for r in obs_rollout:
-            #actions.append(r[0].cpu().data.numpy())
-            #observations.append(r[1])
-
-        # Log Wandb
-        wandb.log(
-            {
-                "mean_episodic_return": mean_episodic_return,
-                "loss/actor": loss[0],
-                "loss/entropy": loss[1],
-                "loss/critic": loss[2],
-                "lr": np.float32(lr),
-                "action_std": np.float32(action_std),
-                "eps": np.float32(eps),
-                "video": wandb.Video(_format_video_wandb(observations), fps=8),
-                #f"actions-{current_step}": wandb.Table(columns=[f"a{i}" for i in range(26)], data=actions)
-            }, step=current_step)
-
-        # Dump observation data
-        with open(os.path.join(images_path, f"observation.p"), "wb") as f:
-            pickle.dump(observations, f)
-
-        row = [loss[0], loss[1], loss[2], mean_episodic_return]
-
-        # Save training history
-        with open(os.path.join(loss_path, 'history.csv'), 'a') as f_object:
-            writer_object = writer(f_object)
-            writer_object.writerow(row)
-            f_object.close()
-
-        is_best = mean_episodic_return > best_mean_episodic_return
-
-        # Save the checkpoint for each rollout
-        _save_checkpoint({
-            "current_step": current_step,
-            "best_mean_episodic_return": best_mean_episodic_return,
-            "model_state": agent_state,
-            "optim_state": optim_state,
-            "scheduler_state": scheduler_state,
-            "eps_clip": eps,
-            "action_std": action_std,
-        }, checkpoint_path, is_best)
-
-
-def _format_video_wandb(last_obs_rollout) -> np.array:
-    trans = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Resize((128, 256)),
-        transforms.ToPILImage(),
-    ])
-
-    video = []
-
-    font = ImageFont.truetype("Roboto/Roboto-Medium.ttf", size=10)
-
-    for index, o in enumerate(last_obs_rollout):
-        image_array = np.concatenate((trans(o[-1][1]), trans(o[-1][2])), axis=0)
-
-        image = Image.fromarray(image_array, mode="RGB")
-
-        image_editable = ImageDraw.Draw(image)
-
-        image_editable.text((10, 115), o[-1][0], (0, 0, 0), align="center", font=font)
-
-        video.append(np.asarray(image))
-
-    video = np.asarray(video)
-    video = np.transpose(video, (0, 3, 1, 2))
-
-    return video
-
-
-def _save_checkpoint(state, checkpoint_path, is_best):
-    # Set the checkpoint path
-    ckpt_path = os.path.join(checkpoint_path, "checkpoint.tar")
-
-    # Save the checkpoint
-    torch.save(state, ckpt_path)
-
-    # Save the best model
-    if is_best:
-        # Copy the checkpoint to the best model
-        shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_model.tar"))
-
-
-def online_mean_and_sd(images):
-    cnt = 0
-    fst_moment = torch.empty(3)
-    snd_moment = torch.empty(3)
-
-    b, c, h, w = images.shape
-    nb_pixels = b * h * w
-    sum_ = torch.sum(images, dim=[0, 2, 3])
-    sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
-    fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
-    snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
-
-    cnt += nb_pixels
-
-    return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)
-
-
-def parse_arguments():
-    arg = argparse.ArgumentParser()
-    arg.add_argument("--test", type=str, required=False, help="should train or test")
-    arg.add_argument("--resume", type=str, required=False, help="should resume the train")
-
-    args = vars(arg.parse_args())
-
-    return args
-
-
 class Main:
 
-    def __init__(self):
+    def __init__(self, headless=True):
 
         # Training params
         self.conf = CubeSimpleConf()
@@ -186,7 +41,7 @@ class Main:
         self.elapsed_time = 0
         self.num_parameters = 0
         self.output_path = None
-        self.loss_path = None
+        self.info_path = None
         self.checkpoint_path = None
         self.images_path = None
 
@@ -229,7 +84,7 @@ class Main:
         # Build the environment
         self.env = Environment(
             conf=self.conf,
-            headless=True,
+            headless=headless,
             random_seed=self.random_seed
         )
 
@@ -264,7 +119,7 @@ class Main:
             # Set the folders
             self.output_path = os.path.join('out', model_name)
             self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
-            self.loss_path = os.path.join(self.output_path, 'loss')
+            self.info_path = os.path.join(self.output_path, 'info')
             self.images_path = os.path.join(self.output_path, 'images')
 
             # Create the folders
@@ -272,8 +127,8 @@ class Main:
                 os.makedirs(self.output_path)
             if not os.path.exists(self.checkpoint_path):
                 os.makedirs(self.checkpoint_path)
-            if not os.path.exists(self.loss_path):
-                os.makedirs(self.loss_path)
+            if not os.path.exists(self.info_path):
+                os.makedirs(self.info_path)
             if not os.path.exists(self.images_path):
                 os.makedirs(self.images_path)
 
@@ -285,19 +140,19 @@ class Main:
             # Set the folders
             self.output_path = os.path.join('out', model_name)
             self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
-            self.loss_path = os.path.join(self.output_path, 'loss')
+            self.info_path = os.path.join(self.output_path, 'info')
             self.images_path = os.path.join(self.output_path, 'images')
 
             # Load the model
             self._load_checkpoint(best=False)
 
         # Start wandb process
-        self.process_wandb = Process(target=_save_wandb, args=(self.in_queues_wandb,
+        self.process_wandb = Process(target=save_wandb, args=(self.in_queues_wandb,
                                                                resume is not None,
                                                                self.conf,
                                                                model_name,
                                                                self.images_path,
-                                                               self.loss_path,
+                                                               self.info_path,
                                                                self.checkpoint_path))
         self.process_wandb.start()
 
@@ -310,7 +165,7 @@ class Main:
             while self.current_step < self.n_steps:
 
                 # Train one rollout
-                mean_episodic_return, loss, obs_rollout = self._train_one_rollout()
+                return_info, loss_info, obs_rollout = self._train_one_rollout()
 
                 self.current_step += self.n_trajectory * self.n_rollout
 
@@ -323,19 +178,19 @@ class Main:
                                       "- loss actor: {:.6f} "
                                       "- loss critic: {:.6f} "
                                       "- loss entropy: {:.6f} "
-                                      "- return: {:.6f}".
+                                      "- mean return: {:.6f}".
                                       format((toc - tic),
                                              self.current_step,
-                                             loss[0],
-                                             loss[2],
-                                             loss[1],
-                                             mean_episodic_return)))
+                                             loss_info["actor"],
+                                             loss_info["critic"],
+                                             loss_info["entropy"],
+                                             return_info["mean"])))
 
                 # Update the bar
                 pbar.update(self.current_step)
 
                 # Check if it is the best model
-                self.best_mean_episodic_return = max(mean_episodic_return, self.best_mean_episodic_return)
+                self.best_mean_episodic_return = max(return_info["mean"], self.best_mean_episodic_return)
 
                 # Get states
                 agent_state = self.agent.policy.state_dict()
@@ -343,8 +198,8 @@ class Main:
                 scheduler_state = self.agent.scheduler.state_dict()
 
                 # Send data to wandb process
-                self.in_queues_wandb.put((mean_episodic_return,
-                                          loss,
+                self.in_queues_wandb.put((return_info,
+                                          loss_info,
                                           self.agent.scheduler.get_last_lr()[0],
                                           self.agent.eps_clip,
                                           self.agent.policy.action_std,
@@ -379,7 +234,7 @@ class Main:
         random_sample_index = random.randint(0, self.n_rollout - 1)
 
         # For each rollout
-        for r, _ in enumerate(range(self.n_rollout)):
+        for r in range(self.n_rollout):
 
             # Get the first observation
             old_observation = self.env.reset()
@@ -420,7 +275,7 @@ class Main:
                 action, logprob = self.agent.select_action(state)
 
                 # Execute action in the simulator
-                new_observation, reward = self.env.step(action.squeeze())
+                new_observation, reward = self.env.step(action.squeeze().data.cpu().numpy())
 
                 # Save rollout to memory
                 self.memory.rewards.append(reward)
@@ -432,19 +287,26 @@ class Main:
                 # Update observation
                 old_observation = new_observation
 
-        # Compute the mean episodic return
-        mean_episodic_return = sum(self.memory.rewards) / len(self.memory.rewards)
+        # Compute the mean and std episodic return
+        return_info = {
+            "mean": np.mean(np.array(self.memory.rewards)),
+            "std": np.std(np.mean(np.reshape(np.array(self.memory.rewards)), (self.n_rollout, -1)), axis=1)
+        }
 
         # Update the weights
         loss_actor, loss_entropy, loss_critic = self.agent.update(self.memory)
 
-        # Pack loss
-        loss = (loss_actor.cpu().data.numpy(), loss_entropy.cpu().data.numpy(), loss_critic.cpu().data.numpy())
+        # Pack loss into a dictionary
+        loss_info = {
+            "actor": loss_actor.cpu().data.numpy(),
+            "critic": loss_critic.cpu().data.numpy(),
+            "entropy": loss_entropy.cpu().data.numpy()
+        }
 
         # Clear the memory
         self.memory.clear_memory()
 
-        return mean_episodic_return, loss, obs_rollout
+        return return_info, loss_info, obs_rollout
 
     def _build_vocab(self, instruction_set):
 
@@ -463,15 +325,15 @@ class Main:
         # Set the folders
         self.output_path = os.path.join('out', model_name)
         self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
-        self.loss_path = os.path.join(self.output_path, 'loss')
+        self.info_path = os.path.join(self.output_path, 'info')
         self.images_path = os.path.join(self.output_path, 'images')
 
         # Load the model
         self._load_checkpoint(best=False)
 
-    def _visualize_observations(self, obs: [] = None):
+    def validate_observations(self):
 
-        obs = self.env.reset()
+        self.env.reset()
 
         for index in range(128):
             action = [random.randrange(-3, 3) for i in range(26)]
@@ -481,7 +343,13 @@ class Main:
             print(obs[-1][0])
 
             im = Image.fromarray(obs[-1][1], mode="RGB")
-            im.save(f"/home/ic-unicamp/phd/out/{index}.png")
+            im.save(f"./out/{index}.png")
+
+    def validate_joints_nao(self):
+        self.env.validate_joints_nao()
+
+    def validate_collisions_nao(self):
+        self.env.validate_collisions_nao()
 
     def _count_parameters(self, print_table=False):
 
@@ -578,16 +446,31 @@ class Main:
         return online_mean_and_sd(image_tensor)
 
 
+def parse_arguments():
+    arg = argparse.ArgumentParser()
+    arg.add_argument("--test", type=str, required=False, help="Test trained agent {name}.")
+    arg.add_argument("--resume", type=str, required=False, help="Resume training {name}.")
+    arg.add_argument("--val-obs", type=bool, default=False, required=False, help="Validate observations.")
+    arg.add_argument("--val-joint-nao", type=bool, default=False, required=False, help="Validate NAO's joints.")
+    arg.add_argument("--val-collisions-nao", type=bool, default=False, required=False, help="Validate NAO's collisions.")
+
+    return vars(arg.parse_args())
+
+
 if __name__ == "__main__":
 
     multiprocessing.set_start_method('spawn')
 
     args = parse_arguments()
 
-    main = Main()
-
     if args['test'] is not None:
-        main.test(args['test'])
+        Main().test(args['test'])
+    elif args['val_obs']:
+        Main().validate_observations()
+    elif args['val_joint_nao']:
+        Main(headless=False).validate_joints_nao()
+    elif args['val_collisions_nao']:
+        Main(headless=False).validate_collisions_nao()
     else:
-        main.train(args['resume'])
-        # main._visualize_observations()
+        Main(headless=True).train(args['resume'])
+

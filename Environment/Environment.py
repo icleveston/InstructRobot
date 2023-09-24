@@ -13,14 +13,11 @@ class Environment:
         self,
         conf: Conf,
         headless: bool = True,
-        _change_inst_step: int = 1000,
         stack_obs: int = 4,
         random_seed: int = 1
     ):
 
         self._conf = conf
-        self._instruction_set = conf.instruction_set
-        self._change_inst_step = _change_inst_step
         self._stack_obs = stack_obs
         self.random_seed = random_seed
 
@@ -39,22 +36,26 @@ class Environment:
         # Set seed
         random.seed(self.random_seed)
 
-        # Configure init scene
-        self._conf.configure()
-
-    def start(self):
+    def start(self, warm_up_steps=10):
 
         # Start simulation
         self.pr.start()
-        self.pr.step()
 
         # Instantiate Nao
         self.NAO = Nao()
 
+        # Clear observation array
         self._obs.clear()
 
+        # Configure init scene
+        self._conf.configure()
+
+        # Warm up simulator
+        for i in range(warm_up_steps):
+            self.pr.step()
+
         # Get instruction
-        self.instruction, self.reward_function = random.choice(self._instruction_set)
+        self.instruction, self.reward_function = random.choice(self._conf.instruction_set)
 
         # Populate initial observations
         for i in range(self._stack_obs):
@@ -98,6 +99,24 @@ class Environment:
         reward = self.reward_function(self.NAO)
 
         return self._obs, reward
+
+    def validate_joints_nao(self):
+
+        self.reset()
+
+        for is_new_joint, action in self.NAO.validate_joints():
+
+            if is_new_joint:
+                self.reset()
+
+            self.step(action)
+
+    def validate_collisions_nao(self):
+
+        self.reset()
+
+        for action in self.NAO.validate_collisions():
+            self.step(action)
 
     def close(self):
         self.pr.stop()

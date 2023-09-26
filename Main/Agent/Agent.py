@@ -8,12 +8,12 @@ from torch.distributions import MultivariateNormal
 
 
 class Agent:
-    def __init__(self, action_dim, action_std, lr, betas, gamma, K_epochs, eps_clip, total_iters, device):
+    def __init__(self, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, device):
         self.lr = lr
         self.betas = betas
         self.gamma = gamma
         self.eps_clip = eps_clip
-        self.K_epochs = K_epochs
+        self.k_epochs = k_epochs
         self.device = device
 
         self.policy = ActorCritic(action_dim, action_std, self.device).to(self.device)
@@ -69,8 +69,12 @@ class Agent:
         old_instruction_states = torch.squeeze(torch.stack(state_instruction, dim=0)).detach().to(self.device)
         old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
 
+        loss_actor = None
+        loss_entropy = None
+        loss_critic = None
+
         # Optimize policy for K epochs:
-        for _ in range(self.K_epochs):
+        for _ in range(self.k_epochs):
             # Evaluating old actions and values :
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states, old_vision_states,
                                                                         old_actions)
@@ -131,7 +135,7 @@ class ActorCritic(nn.Module):
             nn.Tanh(),
             nn.Linear(256, 128),
             nn.Tanh(),
-            nn.Linear(128, action_dim),
+            nn.Linear(128, action_dim)
         )
 
         self.critic_vision = ConvNet(12, 250)

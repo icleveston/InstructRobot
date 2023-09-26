@@ -106,11 +106,18 @@ class Nao:
 
         return np.array(joint_positions)
 
-    def make_action(self, action: []) -> None:
+    def make_action(self, action: [], show_denormalization: bool = False) -> None:
 
-        # action = vectorized_to_interval(self.joint_limits, np.tanh(np.array(action)))
+        action = np.array(action)
+        action_tanh = np.tanh(action)
+        action_denormalized = vectorized_to_interval(self._joint_limits, action_tanh)
 
-        for target_position, joint in zip(action, self._all_joints):
+        if show_denormalization:
+            print(f"Actions from Agent: {action}")
+            print(f"Actions tanh: {action_tanh}")
+            print(f"Actions action_denormalized: {action_denormalized}")
+
+        for target_position, joint in zip(action_denormalized, self._all_joints):
             joint.set_joint_target_position(target_position)
 
     def check_collisions(self, object_shape: Shape) -> ():

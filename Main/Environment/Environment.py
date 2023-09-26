@@ -4,7 +4,7 @@ import numpy as np
 from .Nao import Nao
 from pyrep.objects.vision_sensor import VisionSensor
 from collections import deque
-from Environment import Conf
+from . import Conf
 
 
 class Environment:

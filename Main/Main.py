@@ -25,7 +25,10 @@ torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=Fal
 
 class Main:
 
-    def __init__(self, headless: bool = True, model_name: str = None):
+    def __init__(self, headless: bool = True, model_name: str = None, gpu: int = 0):
+
+        # Set the default cuda card
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
         # Training params
         self.model_name = model_name
@@ -296,7 +299,7 @@ class Main:
             transforms.Resize((128, 64))
         ])
 
-        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 256, 256), dtype=torch.float)
+        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 128, 128), dtype=torch.float)
 
         index = 0
 

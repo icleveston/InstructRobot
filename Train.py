@@ -8,8 +8,8 @@ from Main import Main
 
 class Train(Main):
 
-    def __init__(self, headless: bool = False, model_name: str = None):
-        super().__init__(headless=headless, model_name=model_name)
+    def __init__(self, headless: bool = False, model_name: str = None, gpu: int = 0):
+        super().__init__(headless=headless, model_name=model_name, gpu=gpu)
 
     def train(self) -> None:
 
@@ -120,6 +120,7 @@ def parse_arguments():
 
     arg.add_argument("--resume", type=str, required=False, dest='model_name',
                      help="Resume training {model_name}.")
+    arg.add_argument("--gpu", type=int, default=0, required=False, help="Select the GPU card.")
 
     return vars(arg.parse_args())
 
@@ -130,6 +131,6 @@ if __name__ == "__main__":
 
     args = parse_arguments()
 
-    Train(headless=True, model_name=args['model_name']).train()
+    Train(headless=True, model_name=args['model_name'], gpu=args['gpu']).train()
 
 

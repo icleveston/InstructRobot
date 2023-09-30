@@ -69,18 +69,17 @@ class CubeSimpleConf(Conf):
 
         n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
-        return n_collision_green
+        return n_collision_green - 0.1 * n_collision_red - 0.1 * n_collision_blue
 
     def _touch_red_cube(self, nao: Nao):
 
         n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
-        return n_collision_red
+        return n_collision_red - 0.1 * n_collision_blue - 0.1 * n_collision_green
 
     def _touch_blue_cube(self, nao: Nao):
 
         n_collision_blue, n_collision_red, n_collision_green = self._get_collisions(nao)
 
-        return n_collision_blue
-
+        return n_collision_blue - 0.1 * n_collision_red - 0.1 * n_collision_green
 

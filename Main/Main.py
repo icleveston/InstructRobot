@@ -75,7 +75,7 @@ class Main:
             lr=self.lr,
             betas=self.betas,
             gamma=self.gamma,
-            K_epochs=self.k_epochs,
+            k_epochs=self.k_epochs,
             eps_clip=self.eps_clip,
             total_iters=self.n_steps // (self.n_rollout * self.n_trajectory),
             device=self.device
@@ -168,7 +168,7 @@ class Main:
             transforms.ToTensor(),
         ])
 
-        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 512, 2048), dtype=torch.float)
+        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 256, 1024), dtype=torch.float)
 
         index = 0
 

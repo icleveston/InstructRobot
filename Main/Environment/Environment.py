@@ -67,8 +67,11 @@ class Environment:
         frame_top = (self.cam_top.capture_rgb() * 255).astype(np.uint8)
         frame_front = (self.cam_front.capture_rgb() * 255).astype(np.uint8)
 
+        # Get proprioception
+        proprioception = self.NAO.get_joint_positions()
+
         # Build observation state
-        observation = (self.instruction, frame_top, frame_front)
+        observation = (self.instruction, frame_top, frame_front, proprioception)
 
         # Append the new observation
         self._obs.append(observation)

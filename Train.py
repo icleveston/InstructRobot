@@ -148,6 +148,8 @@ class Train(Main):
 
                 image_tensor = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
 
+                proprioception_tensor = torch.empty((len(old_observation), 26), dtype=torch.float, device=self.device)
+
                 for i, o in enumerate(old_observation):
                     image_top = o[1]
                     image_front = o[2]
@@ -161,10 +163,15 @@ class Train(Main):
 
                     image_tensor[i] = images_stacked
 
+                    # Save the proprioception information
+                    proprioception_tensor[i] = torch.tensor(o[3], device=self.device)
+
                 image = image_tensor.flatten(0, 1)
 
+                proprioception_tensor = proprioception_tensor.flatten(0, 1)
+
                 # Build state
-                state = (instruction_index, image)
+                state = (instruction_index, image, proprioception_tensor)
 
                 # Select action from the agent
                 action, logprob = self.agent.select_action(state)

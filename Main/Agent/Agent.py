@@ -35,11 +35,13 @@ class Agent:
 
         state_instruction = state[0]
         state_vision = state[1]
+        state_proprioception = state[2]
 
         state_instruction = state_instruction.unsqueeze(dim=0)
         state_vision = state_vision.unsqueeze(dim=0)
+        state_proprioception = state_proprioception.unsqueeze(dim=0)
 
-        return self.policy_old.act(state_instruction, state_vision)
+        return self.policy_old.act(state_instruction, state_vision, state_proprioception)
 
     def update(self, memory):
 
@@ -62,12 +64,15 @@ class Agent:
         # Separate states
         state_instruction = []
         state_vision = []
+        state_proprioception = []
         for s in memory.states:
             state_instruction.append(s[0])
             state_vision.append(s[1])
+            state_proprioception.append(s[2])
 
         old_instruction_states = torch.squeeze(torch.stack(state_instruction, dim=0)).detach().to(self.device)
         old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
+        old_proprioception_states = torch.squeeze(torch.stack(state_proprioception, dim=0)).detach().to(self.device)
 
         loss_actor = None
         loss_entropy = None
@@ -76,7 +81,9 @@ class Agent:
         # Optimize policy for K epochs:
         for _ in range(self.k_epochs):
             # Evaluating old actions and values :
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states, old_vision_states,
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states,
+                                                                        old_vision_states,
+                                                                        old_proprioception_states,
                                                                         old_actions)
 
             # Finding the ratio (pi_theta / pi_theta__old):
@@ -128,10 +135,11 @@ class ActorCritic(nn.Module):
         self.action_std = action_std
         self.actor_vision = ConvNet(12, 250)
         self.actor_instruction = Transformer()
+        self.actor_proprioception = nn.Linear(4 * 26, 250)
 
         self.actor = nn.Sequential(
             nn.Tanh(),
-            nn.Linear(500, 256),
+            nn.Linear(750, 256),
             nn.Tanh(),
             nn.Linear(256, 128),
             nn.Tanh(),
@@ -140,10 +148,11 @@ class ActorCritic(nn.Module):
 
         self.critic_vision = ConvNet(12, 250)
         self.critic_instruction = Transformer()
+        self.critic_proprioception = nn.Linear(4 * 26, 250)
 
         self.critic = nn.Sequential(
             nn.Tanh(),
-            nn.Linear(500, 256),
+            nn.Linear(750, 256),
             nn.Tanh(),
             nn.Linear(256, 128),
             nn.Tanh(),
@@ -155,12 +164,13 @@ class ActorCritic(nn.Module):
     def forward(self):
         raise NotImplementedError
 
-    def act(self, state_instruction, state_vision):
+    def act(self, state_instruction, state_vision, state_proprioception):
 
         x_instruction = self.actor_instruction(state_instruction)
         x_vision = self.actor_vision(state_vision)
+        x_proprioception = self.actor_proprioception(state_proprioception)
 
-        x = torch.cat((x_instruction, x_vision), dim=1)
+        x = torch.cat((x_instruction, x_vision, x_proprioception), dim=1)
 
         action_mean = self.actor(x)
         cov_mat = torch.diag(self.action_var).to(self.device)
@@ -171,12 +181,13 @@ class ActorCritic(nn.Module):
 
         return action.detach(), action_logprob
 
-    def evaluate(self, state_instruction, state_vision, action):
+    def evaluate(self, state_instruction, state_vision, state_proprioception, action):
 
         x_instruction_actor = self.actor_instruction(state_instruction)
         x_vision_actor = self.actor_vision(state_vision)
+        x_proprioception_actor = self.actor_proprioception(state_proprioception)
 
-        x_actor = torch.cat((x_instruction_actor, x_vision_actor), dim=1)
+        x_actor = torch.cat((x_instruction_actor, x_vision_actor, x_proprioception_actor), dim=1)
 
         action_mean = self.actor(x_actor)
 
@@ -190,8 +201,9 @@ class ActorCritic(nn.Module):
 
         x_instruction_critic = self.critic_instruction(state_instruction)
         x_vision_critic = self.critic_vision(state_vision)
+        x_proprioception_critic = self.critic_proprioception(state_proprioception)
 
-        x_critic = torch.cat((x_instruction_critic, x_vision_critic), dim=1)
+        x_critic = torch.cat((x_instruction_critic, x_vision_critic, x_proprioception_critic), dim=1)
 
         state_value = self.critic(x_critic)
 

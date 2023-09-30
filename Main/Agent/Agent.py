@@ -57,6 +57,8 @@ class Agent:
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
+        print(f"max: {rewards.max()}, min: {rewards.min()}")
+
         # Convert list to tensor
         old_actions = torch.squeeze(torch.stack(memory.actions, dim=0)).detach().to(self.device)
         old_logprobs = torch.squeeze(torch.stack(memory.logprobs, dim=0)).detach().to(self.device)
@@ -145,6 +147,8 @@ class ActorCritic(nn.Module):
             nn.Tanh(),
             nn.Linear(128, action_dim)
         )
+
+        nn.init.normal_(self.actor[5].weight, 0, 0.0001)
 
         self.critic_vision = ConvNet(12, 250)
         self.critic_instruction = Transformer()

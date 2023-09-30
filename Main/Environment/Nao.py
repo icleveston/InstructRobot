@@ -6,22 +6,6 @@ from pyrep.objects.joint import Joint
 from pyrep.objects.shape import Shape, PrimitiveShape
 
 
-def vectorized_to_interval(limits: np.array, actions: np.array) -> np.array:
-    """
-    Converts a vector of actions in the range (-1, 1) to the range given by
-    limits array
-
-    Args:
-        limits: the limits for which the actions will be scaled
-        actions: the action in the range (-1, 1)
-    """
-    # Actions ranges in (-1, 1)
-    min_, max_ = -1, 1
-    a, b = limits[:, 0], limits[:, 1]
-
-    return ((b - a) * (actions - min_) / (max_ - min_)) + a
-
-
 class Nao:
     def __init__(self):
 
@@ -94,27 +78,29 @@ class Nao:
 
         self._joint_limits = np.array(joint_limits)
 
+        # Create the clip range [-1, 1]
+        self.clip_range = np.array([[-1, 1] for _ in range(len(self._joint_limits))])
+
         for finger_name in _fingers_names:
             shape = Shape(name_or_handle=finger_name)
             self._all_fingers.append(shape)
 
     def get_joint_positions(self) -> np.array:
 
-        joint_positions = [
-            joint.get_joint_position() for joint in self._all_joints
-        ]
+        # Read joint target position for each joint
+        joint_positions = np.array([joint.get_joint_target_position() for joint in self._all_joints])
 
-        return np.array(joint_positions)
+        return self.normalize(joint_positions, inverse=True)
 
     def make_action(self, action: [], show_denormalization: bool = False) -> None:
 
         action = np.array(action)
-        action_tanh = np.tanh(action)
-        action_denormalized = vectorized_to_interval(self._joint_limits, action_tanh)
+        action_clip = np.clip(action, a_min=-1, a_max=1)
+        action_denormalized = self.normalize(action_clip)
 
         if show_denormalization:
             print(f"Actions from Agent: {action}")
-            print(f"Actions tanh: {action_tanh}")
+            print(f"Actions clip: {action_clip}")
             print(f"Actions action_denormalized: {action_denormalized}")
 
         for target_position, joint in zip(action_denormalized, self._all_joints):
@@ -129,18 +115,36 @@ class Nao:
 
         return sum(collision_array.values()), collision_array
 
-    def validate_joints(self, joint_position_step=0.005):
+    def normalize(self, x: np.array, inverse: bool = False) -> np.array:
+
+        if inverse:
+            old_range = self._joint_limits
+            new_range = self.clip_range
+        else:
+            old_range = self.clip_range
+            new_range = self._joint_limits
+
+        norm = (x - old_range[:, 0]) / (old_range[:, 1] - old_range[:, 0])
+
+        return norm * (new_range[:, 1] - new_range[:, 0]) + new_range[:, 0]
+
+    def validate_joints(self, steps=500) -> tuple:
+
+        # Get initial joint position
+        initial_joint_position = self.get_joint_positions()
+
+        # Create linear space for the joint positions
+        joint_values = np.linspace(-1, 1, steps)
 
         # Test each joint independently
-        for i, joint_limits in enumerate(self._joint_limits):
+        for i in range(len(self._joint_limits)):
 
             is_new_joint = True
 
-            # Increase the joint position
-            joint_values = np.arange(joint_limits[0], joint_limits[1], joint_position_step)
-
             for joint_value in joint_values:
-                action = np.zeros(26)
+
+                action = np.array(initial_joint_position)
+
                 action[i] = joint_value
 
                 yield is_new_joint, action

@@ -137,7 +137,7 @@ class ActorCritic(nn.Module):
         self.action_std = action_std
         self.actor_vision = ConvNet(9, 250)
         self.actor_instruction = Transformer()
-        self.actor_proprioception = nn.Linear(4 * 26, 250)
+        self.actor_proprioception = nn.Linear(3 * 26, 250)
 
         self.actor = nn.Sequential(
             nn.Tanh(),
@@ -148,11 +148,11 @@ class ActorCritic(nn.Module):
             nn.Linear(128, action_dim)
         )
 
-        nn.init.normal_(self.actor[5].weight, 0, 0.0001)
+        #nn.init.normal_(self.actor[5].weight, 0, 0.0001)
 
         self.critic_vision = ConvNet(9, 250)
         self.critic_instruction = Transformer()
-        self.critic_proprioception = nn.Linear(4 * 26, 250)
+        self.critic_proprioception = nn.Linear(3 * 26, 250)
 
         self.critic = nn.Sequential(
             nn.Tanh(),

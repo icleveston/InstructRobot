@@ -1,4 +1,6 @@
 import random
+from typing import List, Any
+
 from pyrep import PyRep
 import numpy as np
 from .Nao import Nao
@@ -13,12 +15,12 @@ class Environment:
         self,
         conf: Conf,
         headless: bool = True,
-        stack_obs: int = 4,
+        stack_obs: int = 3,
         random_seed: int = 1
     ):
 
         self._conf = conf
-        self._stack_obs = stack_obs
+        self._stack_obs = stack_obs*2
         self.random_seed = random_seed
 
         self.pr = PyRep()
@@ -67,20 +69,23 @@ class Environment:
         frame_top = (self.cam_top.capture_rgb() * 255).astype(np.uint8)
         frame_front = (self.cam_front.capture_rgb() * 255).astype(np.uint8)
 
+        # Get proprioception
+        proprioception = self.NAO.get_joint_positions()
+
         # Build observation state
-        observation = (self.instruction, frame_top, frame_front)
+        observation = (self.instruction, frame_top, frame_front, proprioception)
 
         # Append the new observation
         self._obs.append(observation)
 
-    def reset(self) -> deque:
+    def reset(self) -> list[Any]:
 
         if self.pr.running:
             self.pr.stop()
 
         self.start()
 
-        return self._obs
+        return [o for i, o in enumerate(self._obs) if i % 2 == 0]
 
     def step(self, action: []) -> ():
 
@@ -98,7 +103,7 @@ class Environment:
         # Compute the reward
         reward = self.reward_function(self.NAO)
 
-        return self._obs, reward
+        return [o for i, o in enumerate(self._obs) if i % 2 == 0], reward
 
     def validate_joints_nao(self):
 

@@ -357,7 +357,7 @@ def _save_wandb(in_queue,
         observation = observations[random_sample_index]
 
         # Create loss description
-        loss_description = {f"loss/{loss_name}": loss_value for loss_name, loss_value in loss_info.items()}
+        loss_description = {f"loss_{loss_name}": loss_value for loss_name, loss_value in loss_info.items()}
 
         # Create the wandb log
         wandb_log = {

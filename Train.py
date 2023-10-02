@@ -106,7 +106,7 @@ class Train(Main):
                 pbar.set_description(description)
 
                 # Update the bar
-                pbar.update(self.current_step)
+                pbar.update(self.n_trajectory * self.n_rollout)
 
                 # Clear the memory
                 self.memory.clear_memory()

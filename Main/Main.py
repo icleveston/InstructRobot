@@ -14,7 +14,7 @@ from PIL import Image, ImageFont, ImageDraw
 from csv import writer
 from multiprocessing import Process
 
-from .Agent import Agent, Memory
+from .Agent.Extrinsic import Memory
 from .Environment import Environment
 from .Environment.CubeSimpleConf import CubeSimpleConf
 
@@ -25,7 +25,7 @@ torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=Fal
 
 class Main:
 
-    def __init__(self, headless: bool = True, model_name: str = None, gpu: int = 0):
+    def __init__(self, agent, headless: bool = True, model_name: str = None, gpu: int = 0):
 
         # Set the default cuda card
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -80,8 +80,7 @@ class Main:
 
         print(f"\n[*] Device: {self.device}")
 
-        # Build the agent
-        self.agent = Agent(
+        self.agent = agent(
             action_dim=self.action_dim,
             action_std=self.action_std,
             lr=self.lr,
@@ -357,7 +356,7 @@ def _save_wandb(in_queue,
         observation = observations[random_sample_index]
 
         # Create loss description
-        loss_description = {f"loss/{loss_name}": loss_value for loss_name, loss_value in loss_info.items()}
+        loss_description = {f"loss_{loss_name}": loss_value for loss_name, loss_value in loss_info.items()}
 
         # Create the wandb log
         wandb_log = {

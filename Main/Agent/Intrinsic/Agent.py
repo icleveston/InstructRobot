@@ -58,12 +58,16 @@ class Agent:
 
     def compute_intrinsic_reward(self, state, state_pred):
 
+        # Get last observation
         state_vision = state[0][-1]
 
+        # Transform the images
         state_vision = self.trans_intrinsic(state_vision)
 
+        # Flatten the image in a 1D vector
         state_vision = state_vision.flatten().unsqueeze(dim=0)
 
+        # Compute the MSE loss
         return self.intrinsic_loss(state_vision, state_pred).detach(), state_vision
 
     def update(self, memory: Memory):

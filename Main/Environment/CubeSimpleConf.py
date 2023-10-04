@@ -20,30 +20,28 @@ class CubeSimpleConf(Conf):
 
         super().__init__("CubeSimpleSet", scene_file, instructions_set)
 
-        self.cube_green: Shape = None
-        self.cube_red: Shape = None
-        self.cube_blue: Shape = None
+        self.cube_green: Shape | None = None
+        self.cube_red: Shape | None = None
+        self.cube_blue: Shape | None = None
 
     def configure(self) -> None:
 
-        if False:
+        self._load_objects()
 
-            self._load_objects()
+        # Get object's current position
+        positions = [
+            self.cube_green.get_position(),
+            self.cube_red.get_position(),
+            self.cube_blue.get_position()
+        ]
 
-            # Get object's current position
-            positions = [
-                self.cube_green.get_position(),
-                self.cube_red.get_position(),
-                self.cube_blue.get_position()
-            ]
+        # Shuffle array of positions
+        random.shuffle(positions)
 
-            # Shuffle array of positions
-            random.shuffle(positions)
-
-            # Set objects position
-            self.cube_green.set_position(positions[0])
-            self.cube_red.set_position(positions[1])
-            self.cube_blue.set_position(positions[2])
+        # Set objects position
+        self.cube_green.set_position(positions[0])
+        self.cube_red.set_position(positions[1])
+        self.cube_blue.set_position(positions[2])
 
     def _load_objects(self) -> None:
 

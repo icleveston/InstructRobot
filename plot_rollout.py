@@ -39,12 +39,15 @@ def plot(experiment_root_dir: str,
         transforms.ToPILImage(),
     ])
 
-    basename: str = "best" if load_best_observation else "last"
+    basename: str = "best_observation" if load_best_observation else "last_observation"
 
     video_data = []
 
     # Select rollout
-    rollout_n: int = int(input(f"Which rollout do you want to save? [0-{len(observations)}]"))
+    rollout_n: int = int(input(f"Which rollout would you like to save? [0-{len(observations)-1}]: "))
+
+    # Change the output filename
+    basename += f"_rollout_{rollout_n}"
 
     # Select the rollout
     observation = observations[rollout_n]
@@ -53,8 +56,8 @@ def plot(experiment_root_dir: str,
     for index, o in enumerate(observation):
 
         # Transform the images
-        top = np.array(trans(o[-1][1]))
-        front = np.array(trans(o[-1][2]))
+        top = np.array(trans(o[-1]["frame_top"]))
+        front = np.array(trans(o[-1]["frame_front"]))
 
         # Select the clip type
         if clip_type == "ALL":
@@ -66,11 +69,11 @@ def plot(experiment_root_dir: str,
 
         image = Image.fromarray(image_array, mode="RGB")
 
-        if draw_instruction:
+        if draw_instruction and "instruction" in o[-1].keys():
 
             image_editable = ImageDraw.Draw(image)
 
-            image_editable.text((10, 115), o[-1][0], (0, 0, 0), align="center", font=font)
+            image_editable.text((10, 115), o[-1]["instruction"], (0, 0, 0), align="center", font=font)
 
         video_data.append(np.asarray(image))
 
@@ -95,12 +98,12 @@ def export(save_as: str, basename: str, fps: int, plot_path: str, video_data):
     # Export as gif
     if save_as == 'gif':
 
-        clip_path = os.path.join(plot_path, f"{basename}_clip.gif")
+        clip_path = os.path.join(plot_path, f"{basename}.gif")
         clip.write_gif(clip_path)
 
     elif save_as == 'mp4':
 
-        clip_path = os.path.join(plot_path, f"{basename}_clip.mp4")
+        clip_path = os.path.join(plot_path, f"{basename}.mp4")
         clip.write_videofile(clip_path)
 
     else:
@@ -112,7 +115,7 @@ def export(save_as: str, basename: str, fps: int, plot_path: str, video_data):
             # Save frame
             im.save(os.path.join(plot_path, f"{basename}_{i}.png"))
 
-    print(f"Clip saved to: {plot_path}")
+    print(f"Saved to: {plot_path}")
 
 
 def parse_arguments():

@@ -4,17 +4,23 @@ from tqdm import tqdm
 import multiprocessing
 
 from Main import Main
+from Main.Agent.Intrinsic import Memory
 from Main.Agent.Intrinsic import Agent
+from Main.Environment import Environment
+from Main.Environment.CubeSimpleIntEnv import CubeSimpleIntEnv
 
 
 class TrainIntrinsic(Main):
 
     def __init__(self, headless: bool = False, model_name: str = None, gpu: int = 0):
 
-        # Define the agent
-        agent: Agent = Agent
+        # Define the agent and memory
+        agent: Agent.__class__ = Agent
+        memory: Memory.__class__ = Memory
+        env: Environment.__class__ = CubeSimpleIntEnv
 
-        super().__init__(agent=agent, headless=headless, model_name=model_name, gpu=gpu)
+        # Initialize parent class
+        super().__init__(environment=env, agent=agent, memory=memory, headless=headless, model_name=model_name, gpu=gpu)
 
     def train(self) -> None:
 
@@ -41,51 +47,29 @@ class TrainIntrinsic(Main):
                         # Save observations
                         observations[r].append(old_observation.copy())
 
-                        image_tensor = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float,
-                                                   device=self.device)
-
-                        proprioception_tensor = torch.empty((len(old_observation), 26), dtype=torch.float,
-                                                            device=self.device)
-
-                        for i, o in enumerate(old_observation):
-                            image_top = o[1]
-                            image_front = o[2]
-
-                            # Convert state to tensor
-                            image_top_tensor = self.trans(image_top)
-                            image_font_tensor = self.trans(image_front)
-
-                            # Cat all images into a single one
-                            images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)
-
-                            image_tensor[i] = images_stacked
-
-                            # Save the proprioception information
-                            proprioception_tensor[i] = torch.tensor(o[3], device=self.device)
-
-                        image = image_tensor.flatten(0, 1)
-
-                        proprioception_tensor = proprioception_tensor.flatten(0, 1)
-
-                        # Build state
-                        state = (image, proprioception_tensor)
+                        # Build state from observation
+                        _, state_flatten = self._build_state_from_observations(old_observation)
 
                         # Select action from the agent
-                        action, logprob = self.agent.select_action(state)
+                        action, logprob = self.agent.select_action(state_flatten)
 
                         # Predict the next state
-                        state_pred = self.agent.prediction_next_state(state, action).squeeze().cpu().numpy()
+                        state_pred = self.agent.predict_next_state(state_flatten, action)
 
                         # Execute action in the simulator
                         new_observation, ext_reward = self.env.step(action.squeeze().data.cpu().numpy())
 
+                        # Build new state from new observation
+                        new_state, _ = self._build_state_from_observations(new_observation)
+
                         # Compute the intrinsic reward
-                        int_reward = mean_squared_error(state, state_pred)
+                        int_reward, state_intrinsic = self.agent.compute_intrinsic_reward(new_state, state_pred)
 
                         # Save rollout to memory
                         self.memory.rewards_ext.append(ext_reward)
-                        self.memory.rewards_int.append(int_reward)
-                        self.memory.states.append(state)
+                        self.memory.rewards_int.append(int_reward.data.cpu().numpy())
+                        self.memory.states.append(state_flatten)
+                        self.memory.states_intrinsic.append(state_intrinsic)
                         self.memory.actions.append(action.squeeze())
                         self.memory.logprobs.append(logprob.squeeze())
                         self.memory.is_terminals.append(j == self.n_trajectory - 1)
@@ -120,6 +104,33 @@ class TrainIntrinsic(Main):
 
         # Kill all process
         self.process_wandb.kill()
+
+    def _build_state_from_observations(self, old_observation):
+
+        image_tensor = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
+        proprioception_tensor = torch.empty((len(old_observation), 26), dtype=torch.float, device=self.device)
+
+        for i, o in enumerate(old_observation):
+            image_top = o["frame_top"]
+            image_front = o["frame_front"]
+
+            # Convert state to tensor
+            image_top_tensor = self.trans(image_top)
+            image_font_tensor = self.trans(image_front)
+
+            # Cat all images into a single one
+            images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)
+
+            image_tensor[i] = images_stacked
+
+            # Save the proprioception information
+            proprioception_tensor[i] = torch.tensor(o["proprioception"], device=self.device)
+
+        state_vision = image_tensor.flatten(0, 1)
+        state_proprioception = proprioception_tensor.flatten(0, 1)
+
+        # Build state
+        return (image_tensor, proprioception_tensor),  (state_vision, state_proprioception)
 
 
 def parse_arguments():

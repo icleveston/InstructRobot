@@ -4,7 +4,10 @@ from tqdm import tqdm
 import multiprocessing
 
 from Main import Main
+from Main.Agent.Extrinsic import Memory
 from Main.Agent.Extrinsic import Agent
+from Main.Environment import Environment
+from Main.Environment.CubeSimpleExtEnv import CubeSimpleExtEnv
 
 
 class Train(Main):
@@ -12,9 +15,12 @@ class Train(Main):
     def __init__(self, headless: bool = False, model_name: str = None, gpu: int = 0):
 
         # Define the agent
-        agent = Agent
+        agent: Agent.__class__ = Agent
+        memory: Memory.__class__ = Memory
+        env: Environment.__class__ = CubeSimpleExtEnv
 
-        super().__init__(agent=agent, headless=headless, model_name=model_name, gpu=gpu)
+        # Initialize parent class
+        super().__init__(environment=env, agent=agent, memory=memory, headless=headless, model_name=model_name, gpu=gpu)
 
     def train(self) -> None:
 
@@ -41,11 +47,8 @@ class Train(Main):
                         # Save observations
                         observations[r].append(old_observation.copy())
 
-                        # Tokenize instruction
-                        instruction_token = self.tokenizer(old_observation[-1][0])
-
                         # Get instructions indexes
-                        instruction_index = torch.tensor(self.vocab(instruction_token), device=self.device)
+                        instruction_index = torch.tensor(self.env.tokenize(old_observation[-1]["instruction"]), device=self.device)
 
                         image_tensor = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float,
                                                    device=self.device)
@@ -54,8 +57,8 @@ class Train(Main):
                                                             device=self.device)
 
                         for i, o in enumerate(old_observation):
-                            image_top = o[1]
-                            image_front = o[2]
+                            image_top = o["frame_top"]
+                            image_front = o["frame_front"]
 
                             # Convert state to tensor
                             image_top_tensor = self.trans(image_top)
@@ -67,7 +70,7 @@ class Train(Main):
                             image_tensor[i] = images_stacked
 
                             # Save the proprioception information
-                            proprioception_tensor[i] = torch.tensor(o[3], device=self.device)
+                            proprioception_tensor[i] = torch.tensor(o["proprioception"], device=self.device)
 
                         image = image_tensor.flatten(0, 1)
 

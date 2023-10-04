@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torchvision import transforms
 from .ActorCritic import ActorCritic
 from .Memory import Memory
 
@@ -26,20 +27,44 @@ class Agent:
         self.policy_old = ActorCritic(action_dim, action_std, self.device).to(self.device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-        self.critic_loss = nn.MSELoss()
-        self.intrinsic_loss = nn.MSELoss()
+        self.critic_loss: nn.MSELoss = nn.MSELoss()
+        self.intrinsic_loss: nn.MSELoss = nn.MSELoss()
+
+        # Compose the transformations
+        self.trans_intrinsic = transforms.Compose([
+            transforms.Grayscale(),
+            transforms.Resize((64, 64))
+        ])
 
     def select_action(self, state):
 
         state_vision = state[0]
+        state_proprioception = state[1]
 
         state_vision = state_vision.unsqueeze(dim=0)
+        state_proprioception = state_proprioception.unsqueeze(dim=0)
 
-        return self.policy_old.act(state_vision)
+        return self.policy_old.act(state_vision, state_proprioception)
 
     def predict_next_state(self, state, action):
 
-        return self.policy_old.next_state(state, action).detach()
+        state_vision = state[0]
+        state_proprioception = state[1]
+
+        state_vision = state_vision.unsqueeze(dim=0)
+        state_proprioception = state_proprioception.unsqueeze(dim=0)
+
+        return self.policy_old.next_state(state_vision, state_proprioception, action)
+
+    def compute_intrinsic_reward(self, state, state_pred):
+
+        state_vision = state[0][-1]
+
+        state_vision = self.trans_intrinsic(state_vision)
+
+        state_vision = state_vision.flatten().unsqueeze(dim=0)
+
+        return self.intrinsic_loss(state_vision, state_pred).detach(), state_vision
 
     def update(self, memory: Memory):
 
@@ -58,14 +83,17 @@ class Agent:
         # Convert list to tensor
         old_actions = torch.squeeze(torch.stack(memory.actions, dim=0)).detach().to(self.device)
         old_logprobs = torch.squeeze(torch.stack(memory.logprobs, dim=0)).detach().to(self.device)
-        old_intrinsic_states = torch.squeeze(torch.stack(memory.intrinsic_states, dim=0)).detach().to(self.device)
+        state_intrinsic = torch.squeeze(torch.stack(memory.states_intrinsic, dim=0)).detach().to(self.device)
 
         # Separate states
         state_vision = []
+        state_proprioception = []
         for s in memory.states:
-            state_vision.append(s[1])
+            state_vision.append(s[0])
+            state_proprioception.append(s[1])
 
         old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
+        old_proprioception_states = torch.squeeze(torch.stack(state_proprioception, dim=0)).detach().to(self.device)
 
         loss_actor = None
         loss_entropy = None
@@ -76,7 +104,9 @@ class Agent:
         for _ in range(self.k_epochs):
 
             # Evaluating old actions and values :
-            logprobs, state_values, dist_entropy, pred_state = self.policy.evaluate(old_vision_states, old_actions)
+            logprobs, state_values, dist_entropy, pred_state = self.policy.evaluate(old_vision_states,
+                                                                                    old_proprioception_states,
+                                                                                    old_actions)
 
             # Finding the ratio (pi_theta / pi_theta__old):
             ratios = torch.exp(logprobs - old_logprobs)
@@ -89,7 +119,7 @@ class Agent:
             loss_actor = -torch.min(surr1, surr2)
             loss_entropy = -0.01 * dist_entropy
             loss_critic = 0.5 * self.critic_loss(state_values, rewards)
-            loss_intrinsic = self.intrinsic_loss(old_intrinsic_states, pred_state)
+            loss_intrinsic = 10 * self.intrinsic_loss(state_intrinsic, pred_state)
 
             loss = loss_actor + loss_entropy + loss_critic + loss_intrinsic
 

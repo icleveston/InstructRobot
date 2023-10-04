@@ -6,17 +6,11 @@ import numpy as np
 import random
 import time
 from prettytable import PrettyTable
-from torchtext.data import get_tokenizer
-from torchtext.vocab import build_vocab_from_iterator
 from multiprocessing import JoinableQueue
 from torchvision import transforms
 from PIL import Image, ImageFont, ImageDraw
 from csv import writer
 from multiprocessing import Process
-
-from .Agent.Extrinsic import Memory
-from .Environment import Environment
-from .Environment.CubeSimpleConf import CubeSimpleConf
 
 torch.set_printoptions(threshold=10_000)
 
@@ -25,14 +19,14 @@ torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=Fal
 
 class Main:
 
-    def __init__(self, agent, headless: bool = True, model_name: str = None, gpu: int = 0):
+    def __init__(self, environment, agent, memory, headless: bool = True, model_name: str = None, gpu: int = 0):
 
         # Set the default cuda card
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
         # Training params
         self.model_name = model_name
-        self.conf = CubeSimpleConf()
+
         self.n_steps = 3E6
         self.n_rollout = 24
         self.n_trajectory = 32
@@ -56,13 +50,7 @@ class Main:
         self.tic = None
         self.process_wandb = None
         self.in_queues_wandb = None
-        self.env_mean = None
-        self.env_std = None
         self.trans = None
-
-        # Create tokenizer and vocab
-        self.tokenizer = get_tokenizer("basic_english")
-        self.vocab = self._build_vocab(self.conf.instruction_set)
 
         # Set the seed
         torch.manual_seed(self.random_seed)
@@ -93,11 +81,10 @@ class Main:
         )
 
         # Build the agent's memory
-        self.memory = Memory()
+        self.memory = memory()
 
         # Build the environment
-        self.env = Environment(
-            conf=self.conf,
+        self.env = environment(
             headless=headless,
             random_seed=self.random_seed
         )
@@ -110,7 +97,7 @@ class Main:
         if self.model_name is None:
             folder_time = time.strftime("%Y_%m_%d_%H_%M_%S")
 
-            self.model_name = f"{self.conf}_{folder_time}"
+            self.model_name = f"{self.env}_{folder_time}"
 
             is_new_execution = True
 
@@ -131,14 +118,11 @@ class Main:
         if not is_new_execution:
             self._load_checkpoint(load_best_checkpoint=False)
 
-        # Compute image mean and std
-        self.env_mean, self.env_std = self._compute_env_mean_std()
-
         # Compose the transformations
         self.trans = transforms.Compose([
             transforms.ToTensor(),
             transforms.Resize((128, 64)),
-            transforms.Normalize(self.env_mean, self.env_std)
+            transforms.Normalize(self.env.env_mean, self.env.env_std)
         ])
 
         # Wandb queue and process
@@ -148,7 +132,7 @@ class Main:
         # Start wandb process
         self.process_wandb = Process(target=_save_wandb, args=(self.in_queues_wandb,
                                                                is_new_execution,
-                                                               self.conf,
+                                                               str(self.env),
                                                                self.model_name,
                                                                self.info_path,
                                                                self.checkpoint_path))
@@ -164,8 +148,8 @@ class Main:
             'n_trajectory': self.n_trajectory,
             'k_epochs': self.k_epochs,
             'gamma': self.gamma,
-            'env_mean': self.env_mean.tolist(),
-            'env_std': self.env_std.tolist(),
+            'env_mean': self.env.env_mean.tolist(),
+            'env_std': self.env.env_std.tolist(),
             "num_parameters": self.num_parameters,
             "random_seed": self.random_seed
         }
@@ -237,17 +221,6 @@ class Main:
             "std": np.std(rewards_rollouts)
         }
 
-    def _build_vocab(self, instruction_set):
-
-        def build_vocab(dataset: []):
-            for instruction, _ in dataset:
-                yield self.tokenizer(instruction)
-
-        vocab = build_vocab_from_iterator(build_vocab(instruction_set), specials=["<UNK>"])
-        vocab.set_default_index(vocab["<UNK>"])
-
-        return vocab
-
     def _count_parameters(self, print_table=False):
 
         table = PrettyTable(["Modules", "Parameters"])
@@ -288,43 +261,6 @@ class Main:
         else:
             print(f"[*] Loaded last checkpoint @ step {self.current_step}")
 
-    def _compute_env_mean_std(self, n_observations_computation=5):
-
-        obs = self.env.reset()
-
-        # Compose the transformations
-        trans = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Resize((128, 64))
-        ])
-
-        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, 128, 128), dtype=torch.float)
-
-        index = 0
-
-        for _ in range(n_observations_computation):
-
-            action = [random.randrange(-1, 1) for _ in range(26)]
-
-            obs, _ = self.env.step(action)
-
-            for o in obs:
-                image_top = o[1]
-                image_front = o[2]
-
-                # Convert state to tensor
-                image_top_tensor = trans(image_top)
-                image_font_tensor = trans(image_front)
-
-                # Cat all images into a single one
-                images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)
-
-                image_tensor[index] = images_stacked
-
-                index += 1
-
-        return _online_mean_and_sd(image_tensor)
-
 
 def percentage_error_formula(x: float, amount_variation: float) -> float:
     return round(x / amount_variation * 100, 3)
@@ -332,13 +268,13 @@ def percentage_error_formula(x: float, amount_variation: float) -> float:
 
 def _save_wandb(in_queue,
                 is_new_execution: bool,
-                conf: str,
+                env_name: str,
                 model_name: str,
                 info_path: str,
                 checkpoint_path: str) -> None:
     # Init Wandb
     wandb.init(
-        project=str(conf),
+        project=env_name,
         name=model_name,
         id=model_name,
         resume=model_name if not is_new_execution else False
@@ -441,13 +377,13 @@ def _format_video_wandb(last_obs_rollout) -> np.array:
     font = ImageFont.truetype("Main/Roboto/Roboto-Medium.ttf", size=10)
 
     for index, o in enumerate(last_obs_rollout):
-        image_array = np.concatenate((trans(o[-1][1]), trans(o[-1][2])), axis=0)
+        image_array = np.concatenate((trans(o[-1]["frame_top"]), trans(o[-1]["frame_front"])), axis=0)
 
         image = Image.fromarray(image_array, mode="RGB")
 
-        image_editable = ImageDraw.Draw(image)
-
-        image_editable.text((10, 115), o[-1][0], (0, 0, 0), align="center", font=font)
+        if "instruction" in o[-1].keys():
+            image_editable = ImageDraw.Draw(image)
+            image_editable.text((10, 115), o[-1]["instruction"], (0, 0, 0), align="center", font=font)
 
         video.append(np.asarray(image))
 
@@ -469,19 +405,3 @@ def _save_checkpoint(checkpoint_path: str, checkpoint: dict, is_best_checkpoint:
         # Copy the last checkpoint to the best checkpoint
         shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_checkpoint.tar"))
 
-
-def _online_mean_and_sd(images: np.array) -> tuple:
-    cnt = 0
-    fst_moment = torch.empty(3)
-    snd_moment = torch.empty(3)
-
-    b, c, h, w = images.shape
-    nb_pixels = b * h * w
-    sum_ = torch.sum(images, dim=[0, 2, 3])
-    sum_of_square = torch.sum(images ** 2, dim=[0, 2, 3])
-    fst_moment = (cnt * fst_moment + sum_) / (cnt + nb_pixels)
-    snd_moment = (cnt * snd_moment + sum_of_square) / (cnt + nb_pixels)
-
-    cnt += nb_pixels
-
-    return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)

@@ -10,11 +10,8 @@ class ActorCritic(nn.Module):
         self.device = device
         self.action_std = action_std
 
-        self.perception = ConvNet(12, 250)
-
-        self.world_model = nn.Sequential(
-            nn.Linear(250 + action_dim, action_dim)
-        )
+        self.actor_vision = ConvNet(9, 250)
+        self.actor_proprioception = nn.Linear(3 * 26, 250)
 
         self.actor = nn.Sequential(
             nn.Tanh(),
@@ -25,6 +22,9 @@ class ActorCritic(nn.Module):
             nn.Linear(128, action_dim)
         )
 
+        self.critic_vision = ConvNet(9, 250)
+        self.critic_proprioception = nn.Linear(3 * action_dim, 250)
+
         self.critic = nn.Sequential(
             nn.Tanh(),
             nn.Linear(500, 256),
@@ -34,37 +34,54 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 1)
         )
 
+        self.intrinsic_vision = ConvNet(9, 250)
+        self.intrinsic_proprioception = nn.Linear(3 * action_dim, 250)
+        self.intrinsic_action = nn.Linear(action_dim, 250)
+
+        self.intrinsic = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(750, 4096)
+        )
+
         self.action_var = torch.full((action_dim,), self.action_std).to(self.device)
 
     def forward(self):
         raise NotImplementedError
 
-    def next_state(self, state_vision, action):
+    def next_state(self, state_vision, state_proprioception, action):
 
-        x = self.perception(state_vision)
-        pred_state = self.world_model(torch.cat((x, action), dim=1))
+        x_vision_intrinsic = self.intrinsic_vision(state_vision)
+        x_proprioception_intrinsic = self.intrinsic_proprioception(state_proprioception)
+        x_action_intrinsic = self.intrinsic_action(action)
+        x_intrinsic = torch.cat((x_vision_intrinsic, x_proprioception_intrinsic, x_action_intrinsic), dim=1)
 
-        return pred_state
+        state_pred = self.intrinsic(x_intrinsic)
 
-    def act(self, state_vision):
+        return state_pred.detach()
 
-        x = self.perception(state_vision)
+    def act(self, state_vision, state_proprioception):
+
+        x_vision = self.actor_vision(state_vision)
+        x_proprioception = self.actor_proprioception(state_proprioception)
+
+        x = torch.cat((x_vision, x_proprioception), dim=1)
+
         action_mean = self.actor(x)
-
         cov_mat = torch.diag(self.action_var).to(self.device)
 
         dist = MultivariateNormal(action_mean, cov_mat, validate_args=False)
         action = dist.sample()
         action_logprob = dist.log_prob(action)
 
-        return action.detach(), action_logprob.detach()
+        return action.detach(), action_logprob
 
-    def evaluate(self, state_vision, action):
+    def evaluate(self, state_vision, state_proprioception, action):
 
-        x = self.perception(state_vision)
-        state_pred = self.world_model(torch.cat((x, action), dim=1))
-        state_value = self.critic(x.detach())
-        action_mean = self.actor(x.detach())
+        # Actor
+        x_vision_actor = self.actor_vision(state_vision)
+        x_proprioception_actor = self.actor_proprioception(state_proprioception)
+        x_actor = torch.cat((x_vision_actor, x_proprioception_actor), dim=1)
+        action_mean = self.actor(x_actor)
 
         action_var = self.action_var.expand_as(action_mean).to(self.device)
         cov_mat = torch.diag_embed(action_var).to(self.device)
@@ -73,6 +90,19 @@ class ActorCritic(nn.Module):
 
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
+
+        # Critic
+        x_vision_critic = self.critic_vision(state_vision)
+        x_proprioception_critic = self.critic_proprioception(state_proprioception)
+        x_critic = torch.cat((x_vision_critic, x_proprioception_critic), dim=1)
+        state_value = self.critic(x_critic)
+
+        # Intrinsic
+        x_vision_intrinsic = self.intrinsic_vision(state_vision)
+        x_proprioception_intrinsic = self.intrinsic_proprioception(state_proprioception)
+        x_action_intrinsic = self.intrinsic_action(action)
+        x_intrinsic = torch.cat((x_vision_intrinsic, x_proprioception_intrinsic, x_action_intrinsic), dim=1)
+        state_pred = self.intrinsic(x_intrinsic)
 
         return action_logprobs, torch.squeeze(state_value), dist_entropy, state_pred
 

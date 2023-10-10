@@ -10,7 +10,7 @@ class CubeSimpleIntEnv(Environment):
 
     def __init__(self, **kwargs):
 
-        scene_file = 'Main/Scenes/Cubes_Simple.ttt'
+        scene_file = 'Main/Scenes/Cubes_Simple_Int.ttt'
 
         self.cube_green: Shape | None = None
         self.cube_red: Shape | None = None

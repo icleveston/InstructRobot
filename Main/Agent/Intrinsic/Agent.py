@@ -33,7 +33,7 @@ class Agent:
         # Compose the transformations
         self.trans_intrinsic = transforms.Compose([
             transforms.Grayscale(),
-            transforms.Resize((64, 64))
+            transforms.Resize((64, 128))
         ])
 
     def select_action(self, state):
@@ -65,10 +65,10 @@ class Agent:
         state_vision = self.trans_intrinsic(state_vision)
 
         # Flatten the image in a 1D vector
-        state_vision = state_vision.flatten().unsqueeze(dim=0)
+        state_vision_flatten = state_vision.flatten().unsqueeze(dim=0)
 
         # Compute the MSE loss
-        return self.intrinsic_loss(state_vision, state_pred).detach(), state_vision
+        return self.intrinsic_loss(state_vision_flatten, state_pred).detach(), state_vision_flatten, state_vision
 
     def update(self, memory: Memory):
 

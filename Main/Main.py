@@ -163,7 +163,7 @@ class Main:
         # Start timer
         self.tic = time.time()
 
-    def process_rollout(self, loss_info: dict, observations) -> str:
+    def process_rollout(self, loss_info: dict, video_info: dict, observations) -> str:
 
         # Measure elapsed time
         self.elapsed_time = time.time() - self.tic
@@ -201,7 +201,7 @@ class Main:
         self.best_mean_episodic_return = max(mean_std_info["mean"], self.best_mean_episodic_return)
 
         # Send data to wandb process
-        self.in_queues_wandb.put((mean_std_info, loss_info, params_info, states_info, observations))
+        self.in_queues_wandb.put((mean_std_info, loss_info, params_info, states_info, video_info, observations))
         self.in_queues_wandb.join()
 
         # Return description
@@ -285,7 +285,7 @@ def _save_wandb(in_queue,
         in_queue.task_done()
 
         # Unpack data
-        mean_std_info, loss_info, params_info, states_info, observations = data
+        mean_std_info, loss_info, params_info, states_info, video_info, observations = data
 
         # Random a rollout to sample
         random_sample_index = random.randint(0, len(observations) - 1)
@@ -294,18 +294,23 @@ def _save_wandb(in_queue,
         # Create loss description
         loss_description = {f"loss_{loss_name}": loss_value for loss_name, loss_value in loss_info.items()}
 
+        # Create the dynamic video log
+        video_log = {f"video_{video_name}": wandb.Video(video_value, fps=8) \
+                     for video_name, video_value in video_info.items()}
+
         # Create the wandb log
         wandb_log = {
             "mean_episodic_return": mean_std_info["mean"],
             "lr": np.float32(params_info["lr"]),
             "action_std": np.float32(params_info["action_std"]),
             "eps": np.float32(params_info["eps_clip"]),
-            "video": wandb.Video(_format_video_wandb(observation), fps=8),
+            "video_front_top": wandb.Video(_format_video_wandb(observation), fps=8),
             # f"actions-{current_step}": wandb.Table(columns=[f"a{i}" for i in range(26)], data=actions)
         }
 
-        # Update log with loss description
+        # Update log with other attributes
         wandb_log.update(loss_description)
+        wandb_log.update(video_log)
 
         # Log Wandb
         wandb.log(wandb_log, step=params_info["step"])
@@ -344,7 +349,6 @@ def _save_observation(info_path: str, observations, is_best_rollout: bool):
 
 
 def _save_csv(file_path: str, info: dict) -> None:
-
     # Check if file already exists
     file_exists: bool = os.path.isfile(file_path)
 
@@ -365,7 +369,6 @@ def _save_csv(file_path: str, info: dict) -> None:
 
 
 def _format_video_wandb(last_obs_rollout) -> np.array:
-
     trans = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize((128, 256)),
@@ -404,4 +407,3 @@ def _save_checkpoint(checkpoint_path: str, checkpoint: dict, is_best_checkpoint:
     if is_best_checkpoint:
         # Copy the last checkpoint to the best checkpoint
         shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_checkpoint.tar"))
-

@@ -1,5 +1,9 @@
 import argparse
+import random
 import torch
+from torchvision import transforms
+import numpy as np
+from PIL import Image
 from tqdm import tqdm
 import multiprocessing
 
@@ -27,7 +31,7 @@ class TrainIntrinsic(Main):
         # Start training
         self.start_train()
 
-        with tqdm(total=self.n_steps) as pbar:
+        with (tqdm(total=self.n_steps) as pbar):
 
             while self.current_step < self.n_steps:
 
@@ -35,6 +39,7 @@ class TrainIntrinsic(Main):
                 self.agent.policy.train()
 
                 observations = [[] for _ in range(self.n_rollout)]
+                intrinsic_frames = [[] for _ in range(self.n_rollout)]
 
                 # For each rollout
                 for r in range(self.n_rollout):
@@ -43,7 +48,6 @@ class TrainIntrinsic(Main):
                     old_observation = self.env.reset()
 
                     for j in range(self.n_trajectory):
-
                         # Save observations
                         observations[r].append(old_observation.copy())
 
@@ -63,16 +67,20 @@ class TrainIntrinsic(Main):
                         new_state, _ = self._build_state_from_observations(new_observation)
 
                         # Compute the intrinsic reward
-                        int_reward, state_intrinsic = self.agent.compute_intrinsic_reward(new_state, state_pred)
+                        int_reward, state_intrinsic_flatten, state_instrinsic \
+                            = self.agent.compute_intrinsic_reward(new_state, state_pred)
 
                         # Save rollout to memory
                         self.memory.rewards_ext.append(ext_reward)
                         self.memory.rewards_int.append(int_reward.data.cpu().numpy())
                         self.memory.states.append(state_flatten)
-                        self.memory.states_intrinsic.append(state_intrinsic)
+                        self.memory.states_intrinsic.append(state_intrinsic_flatten)
                         self.memory.actions.append(action.squeeze())
                         self.memory.logprobs.append(logprob.squeeze())
                         self.memory.is_terminals.append(j == self.n_trajectory - 1)
+
+                        # Append intrinsic frames
+                        intrinsic_frames[r].append({"groundtruth": state_instrinsic, "prediction": state_pred})
 
                         # Update observation
                         old_observation = new_observation
@@ -88,10 +96,15 @@ class TrainIntrinsic(Main):
                     "entropy": loss_entropy.cpu().data.numpy()
                 }
 
+                # Pack video to log
+                video_info = {
+                    "intrinsic_pred": self._format_intrinsic_video(intrinsic_frames)
+                }
+
                 self.current_step += self.n_trajectory * self.n_rollout
 
                 # Process rollout conclusion
-                description = self.process_rollout(loss_info, observations)
+                description = self.process_rollout(loss_info, video_info, observations)
 
                 # Set the var description
                 pbar.set_description(description)
@@ -130,7 +143,38 @@ class TrainIntrinsic(Main):
         state_proprioception = proprioception_tensor.flatten(0, 1)
 
         # Build state
-        return (image_tensor, proprioception_tensor),  (state_vision, state_proprioception)
+        return (image_tensor, proprioception_tensor), (state_vision, state_proprioception)
+
+    def _format_intrinsic_video(self, intrinsic_frames) -> np.array:
+
+        trans = transforms.Compose([
+            transforms.ToPILImage(),
+        ])
+
+        # Random a rollout to sample
+        random_sample_index = random.randint(0, len(intrinsic_frames) - 1)
+        frames = intrinsic_frames[random_sample_index]
+
+        video = []
+
+        for index, o in enumerate(frames):
+
+            prediction = o["prediction"]
+            prediction = prediction.view(1, o["groundtruth"].shape[1], o["groundtruth"].shape[2])
+
+            image_array = np.concatenate((trans(o["groundtruth"]), trans(prediction)), axis=0)
+
+            image = Image.fromarray(image_array, mode="L")
+
+            image = image.convert('RGB')
+
+            video.append(np.asarray(image))
+
+        video = np.asarray(video)
+
+        video = np.transpose(video, (0, 3, 1, 2))
+
+        return video
 
 
 def parse_arguments():
@@ -144,11 +188,8 @@ def parse_arguments():
 
 
 if __name__ == "__main__":
-
     multiprocessing.set_start_method('spawn')
 
     args = parse_arguments()
 
     TrainIntrinsic(headless=True, model_name=args['model_name'], gpu=args['gpu']).train()
-
-

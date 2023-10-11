@@ -1,6 +1,7 @@
 import os
 import shutil
 import torch
+import torchvision
 import wandb
 import numpy as np
 import random
@@ -22,6 +23,7 @@ class Main:
     def __init__(self, environment, agent, memory, headless: bool = True, model_name: str = None, gpu: int = 0):
 
         # Set the default cuda card
+
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
         # Training params
@@ -50,7 +52,8 @@ class Main:
         self.tic = None
         self.process_wandb = None
         self.in_queues_wandb = None
-        self.trans = None
+        self.trans_rgb = None
+        self.trans_gray = None
 
         # Set the seed
         torch.manual_seed(self.random_seed)
@@ -119,10 +122,17 @@ class Main:
             self._load_checkpoint(load_best_checkpoint=False)
 
         # Compose the transformations
-        self.trans = transforms.Compose([
+        self.trans_rgb = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Resize((128, 64)),
-            transforms.Normalize(self.env.env_mean, self.env.env_std)
+            transforms.Resize((64, 128)),
+            transforms.Normalize(self.env.env_mean_rgb, self.env.env_std_rgb)
+        ])
+
+        self.trans_gray = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize((32, 64)),
+            transforms.Grayscale(),
+            transforms.Normalize(self.env.env_mean_gray, self.env.env_std_gray)
         ])
 
         # Wandb queue and process
@@ -148,8 +158,10 @@ class Main:
             'n_trajectory': self.n_trajectory,
             'k_epochs': self.k_epochs,
             'gamma': self.gamma,
-            'env_mean': self.env.env_mean.tolist(),
-            'env_std': self.env.env_std.tolist(),
+            'env_mean_rgb': self.env.env_mean_rgb.tolist(),
+            'env_std_rgb': self.env.env_std_rgb.tolist(),
+            'env_mean_gray': self.env.env_mean_gray.tolist(),
+            'env_std_gray': self.env.env_std_gray.tolist(),
             "num_parameters": self.num_parameters,
             "random_seed": self.random_seed
         }
@@ -260,6 +272,20 @@ class Main:
             print(f"[*] Loaded best checkpoint @ step {self.current_step}")
         else:
             print(f"[*] Loaded last checkpoint @ step {self.current_step}")
+
+
+class NormalizeInverse(torchvision.transforms.Normalize):
+    """
+    Undoes the normalization and returns the reconstructed images in the input domain.
+    """
+
+    def __init__(self, mean, std):
+        std_inv = 1 / (std + 1e-7)
+        mean_inv = -mean * std_inv
+        super().__init__(mean=mean_inv, std=std_inv)
+
+    def __call__(self, tensor):
+        return super().__call__(tensor.clone())
 
 
 def percentage_error_formula(x: float, amount_variation: float) -> float:
@@ -380,6 +406,7 @@ def _format_video_wandb(last_obs_rollout) -> np.array:
     font = ImageFont.truetype("Main/Roboto/Roboto-Medium.ttf", size=10)
 
     for index, o in enumerate(last_obs_rollout):
+
         image_array = np.concatenate((trans(o[-1]["frame_top"]), trans(o[-1]["frame_front"])), axis=0)
 
         image = Image.fromarray(image_array, mode="RGB")

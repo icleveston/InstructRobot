@@ -40,7 +40,7 @@ class ActorCritic(nn.Module):
 
         self.intrinsic = nn.Sequential(
             nn.ReLU(),
-            nn.Linear(750, 8192)
+            nn.Linear(750, 4096)
         )
 
         self.action_var = torch.full((action_dim,), self.action_std).to(self.device)

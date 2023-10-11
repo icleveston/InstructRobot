@@ -7,7 +7,7 @@ from PIL import Image
 from tqdm import tqdm
 import multiprocessing
 
-from Main import Main
+from Main import Main, NormalizeInverse
 from Main.Agent.Intrinsic import Memory
 from Main.Agent.Intrinsic import Agent
 from Main.Environment import Environment
@@ -52,7 +52,7 @@ class TrainIntrinsic(Main):
                         observations[r].append(old_observation.copy())
 
                         # Build state from observation
-                        _, state_flatten = self._build_state_from_observations(old_observation)
+                        state_flatten, _ = self._build_state_from_observations(old_observation)
 
                         # Select action from the agent
                         action, logprob = self.agent.select_action(state_flatten)
@@ -64,11 +64,11 @@ class TrainIntrinsic(Main):
                         new_observation, ext_reward = self.env.step(action.squeeze().data.cpu().numpy())
 
                         # Build new state from new observation
-                        new_state, _ = self._build_state_from_observations(new_observation)
+                        _, state_intrinsic = self._build_state_from_observations(new_observation)
 
                         # Compute the intrinsic reward
-                        int_reward, state_intrinsic_flatten, state_instrinsic \
-                            = self.agent.compute_intrinsic_reward(new_state, state_pred)
+                        int_reward, state_intrinsic_flatten = self.agent.compute_intrinsic_reward(state_intrinsic,
+                                                                                                  state_pred)
 
                         # Save rollout to memory
                         self.memory.rewards_ext.append(ext_reward)
@@ -80,7 +80,7 @@ class TrainIntrinsic(Main):
                         self.memory.is_terminals.append(j == self.n_trajectory - 1)
 
                         # Append intrinsic frames
-                        intrinsic_frames[r].append({"groundtruth": state_instrinsic, "prediction": state_pred})
+                        intrinsic_frames[r].append({"groundtruth": state_intrinsic, "prediction": state_pred})
 
                         # Update observation
                         old_observation = new_observation
@@ -120,7 +120,8 @@ class TrainIntrinsic(Main):
 
     def _build_state_from_observations(self, old_observation):
 
-        image_tensor = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
+        image_tensor_rgb = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
+        image_tensor_gray = torch.empty((len(old_observation), 1, 32, 128), dtype=torch.float, device=self.device)
         proprioception_tensor = torch.empty((len(old_observation), 26), dtype=torch.float, device=self.device)
 
         for i, o in enumerate(old_observation):
@@ -128,26 +129,35 @@ class TrainIntrinsic(Main):
             image_front = o["frame_front"]
 
             # Convert state to tensor
-            image_top_tensor = self.trans(image_top)
-            image_font_tensor = self.trans(image_front)
+            image_top_tensor_rgb = self.trans_rgb(image_top)
+            image_front_tensor_rgb = self.trans_rgb(image_front)
+
+            image_top_tensor_gray = self.trans_gray(image_top)
+            image_front_tensor_gray = self.trans_gray(image_front)
 
             # Cat all images into a single one
-            images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)
+            images_stacked_rgb = torch.cat((image_top_tensor_rgb, image_front_tensor_rgb), dim=1)
+            images_stacked_gray = torch.cat((image_top_tensor_gray, image_front_tensor_gray), dim=2)
 
-            image_tensor[i] = images_stacked
+            image_tensor_rgb[i] = images_stacked_rgb
+            image_tensor_gray[i] = images_stacked_gray
 
             # Save the proprioception information
             proprioception_tensor[i] = torch.tensor(o["proprioception"], device=self.device)
 
-        state_vision = image_tensor.flatten(0, 1)
+        state_vision_rgb = image_tensor_rgb.flatten(0, 1)
         state_proprioception = proprioception_tensor.flatten(0, 1)
 
+        # Get last observation
+        state_intrinsic = image_tensor_gray[0][-1]
+
         # Build state
-        return (image_tensor, proprioception_tensor), (state_vision, state_proprioception)
+        return (state_vision_rgb, state_proprioception), state_intrinsic
 
     def _format_intrinsic_video(self, intrinsic_frames) -> np.array:
 
         trans = transforms.Compose([
+            NormalizeInverse(self.env.env_mean_gray, self.env.env_std_gray),
             transforms.ToPILImage(),
         ])
 
@@ -159,10 +169,10 @@ class TrainIntrinsic(Main):
 
         for index, o in enumerate(frames):
 
-            prediction = o["prediction"]
-            prediction = prediction.view(1, o["groundtruth"].shape[1], o["groundtruth"].shape[2])
+            prediction = o["prediction"].view(1, o["groundtruth"].shape[0], o["groundtruth"].shape[1])
+            groundtruth = o["groundtruth"].unsqueeze(0)
 
-            image_array = np.concatenate((trans(o["groundtruth"]), trans(prediction)), axis=0)
+            image_array = np.concatenate((trans(groundtruth), trans(prediction)), axis=0)
 
             image = Image.fromarray(image_array, mode="L")
 
@@ -175,7 +185,6 @@ class TrainIntrinsic(Main):
         video = np.transpose(video, (0, 3, 1, 2))
 
         return video
-
 
 def parse_arguments():
     arg = argparse.ArgumentParser()

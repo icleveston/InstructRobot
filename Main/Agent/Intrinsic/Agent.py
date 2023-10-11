@@ -30,12 +30,6 @@ class Agent:
         self.critic_loss: nn.MSELoss = nn.MSELoss()
         self.intrinsic_loss: nn.MSELoss = nn.MSELoss()
 
-        # Compose the transformations
-        self.trans_intrinsic = transforms.Compose([
-            transforms.Grayscale(),
-            transforms.Resize((64, 128))
-        ])
-
     def select_action(self, state):
 
         state_vision = state[0]
@@ -58,17 +52,11 @@ class Agent:
 
     def compute_intrinsic_reward(self, state, state_pred):
 
-        # Get last observation
-        state_vision = state[0][-1]
-
-        # Transform the images
-        state_vision = self.trans_intrinsic(state_vision)
-
         # Flatten the image in a 1D vector
-        state_vision_flatten = state_vision.flatten().unsqueeze(dim=0)
+        state_flatten = state.flatten().unsqueeze(dim=0)
 
         # Compute the MSE loss
-        return self.intrinsic_loss(state_vision_flatten, state_pred).detach(), state_vision_flatten, state_vision
+        return self.intrinsic_loss(state_flatten, state_pred).detach(), state_flatten
 
     def update(self, memory: Memory):
 

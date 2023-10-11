@@ -1,1 +1,1 @@
-from .Main import Main
+from .Main import Main, NormalizeInverse

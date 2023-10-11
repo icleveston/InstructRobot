@@ -9,6 +9,7 @@ from .Nao import Nao
 from pyrep.objects.vision_sensor import VisionSensor
 from collections import deque
 from abc import ABC, abstractmethod
+from PIL import Image
 
 
 class Environment(ABC):
@@ -43,7 +44,8 @@ class Environment(ABC):
         random.seed(self.random_seed)
 
         # Compute image mean and std
-        self.env_mean, self.env_std = self._compute_env_mean_std()
+        self.env_mean_rgb, self.env_std_rgb = self._compute_env_mean_std()
+        self.env_mean_gray, self.env_std_gray = self._compute_env_mean_std(height=32, width=64, is_gray=True)
 
     def __str__(self) -> str:
         return self._name
@@ -143,17 +145,24 @@ class Environment(ABC):
         self.pr.stop()
         self.pr.shutdown()
 
-    def _compute_env_mean_std(self, height=64, width=128, n_observations_computation=5):
+    def _compute_env_mean_std(self, width=128, height=64, n_observations_computation=5, is_gray: bool = False):
 
         obs = self.reset()
 
-        # Compose the transformations
-        trans = transforms.Compose([
+        # Add basic transformations
+        transformations_array = [
             transforms.ToTensor(),
-            transforms.Resize((width, height))
-        ])
+            transforms.Resize((height, width))
+        ]
 
-        image_tensor = torch.empty((len(obs) * n_observations_computation, 3, width, height*2), dtype=torch.float)
+        if is_gray:
+            transformations_array.append(transforms.Grayscale())
+
+        # Compose the transformations
+        trans = transforms.Compose(transformations_array)
+
+        image_tensor = torch.empty((len(obs) * n_observations_computation, 1 if is_gray else 3, height*2, width),
+                                   dtype=torch.float)
 
         index = 0
 
@@ -172,19 +181,19 @@ class Environment(ABC):
                 image_font_tensor = trans(image_front)
 
                 # Cat all images into a single one
-                images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=2)
+                images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=1)
 
                 image_tensor[index] = images_stacked
 
                 index += 1
 
-        return _online_mean_and_sd(image_tensor)
+        return _online_mean_and_sd(image_tensor, is_gray)
 
 
-def _online_mean_and_sd(images: np.array) -> tuple:
+def _online_mean_and_sd(images: np.array, is_gray: bool = False) -> tuple:
     cnt = 0
-    fst_moment = torch.empty(3)
-    snd_moment = torch.empty(3)
+    fst_moment = torch.empty(1 if is_gray else 3)
+    snd_moment = torch.empty(1 if is_gray else 3)
 
     b, c, h, w = images.shape
     nb_pixels = b * h * w

@@ -1,12 +1,16 @@
 import torch
 import torch.nn as nn
-from torchvision import transforms
+import numpy as np
+from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 from .ActorCritic import ActorCritic
 from .Memory import Memory
+from torchvision import transforms
+from Main.Main import NormalizeInverse
 
 
 class Agent:
-    def __init__(self, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, device):
+    def __init__(self, env, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, device):
+        self.env = env
         self.lr = lr
         self.betas = betas
         self.gamma = gamma
@@ -28,7 +32,12 @@ class Agent:
         self.policy_old.load_state_dict(self.policy.state_dict())
 
         self.critic_loss: nn.MSELoss = nn.MSELoss()
-        self.intrinsic_loss: nn.MSELoss = nn.MSELoss()
+
+        self.ssim_loss = SSIM(data_range=1, size_average=True, nonnegative_ssim=True)
+
+        self.trans_inverse_rgb = transforms.Compose([
+            NormalizeInverse(self.env.env_mean_rgb, self.env.env_std_rgb),
+        ])
 
     def select_action(self, state):
 
@@ -52,11 +61,8 @@ class Agent:
 
     def compute_intrinsic_reward(self, state, state_pred):
 
-        # Flatten the image in a 1D vector
-        state_flatten = state.flatten().unsqueeze(dim=0)
-
-        # Compute the MSE loss
-        return self.intrinsic_loss(state_flatten, state_pred).detach(), state_flatten
+        # Compute the loss
+        return 1-ssim(state, state_pred, data_range=1, size_average=True, nonnegative_ssim=True).detach()
 
     def update(self, memory: Memory):
 
@@ -69,13 +75,13 @@ class Agent:
             rewards.insert(0, discounted_reward)
 
         # Normalizing the rewards
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        rewards = torch.as_tensor(np.array(rewards), dtype=torch.float32).to(self.device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
         # Convert list to tensor
-        old_actions = torch.squeeze(torch.stack(memory.actions, dim=0)).detach().to(self.device)
-        old_logprobs = torch.squeeze(torch.stack(memory.logprobs, dim=0)).detach().to(self.device)
-        state_intrinsic = torch.squeeze(torch.stack(memory.states_intrinsic, dim=0)).detach().to(self.device)
+        old_actions = torch.squeeze(torch.stack(memory.actions)).detach().to(self.device)
+        old_logprobs = torch.squeeze(torch.stack(memory.logprobs)).detach().to(self.device)
+        state_intrinsic = torch.squeeze(torch.stack(memory.states_intrinsic), dim=1).detach().to(self.device)
 
         # Separate states
         state_vision = []
@@ -84,8 +90,8 @@ class Agent:
             state_vision.append(s[0])
             state_proprioception.append(s[1])
 
-        old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
-        old_proprioception_states = torch.squeeze(torch.stack(state_proprioception, dim=0)).detach().to(self.device)
+        old_vision_states = torch.squeeze(torch.stack(state_vision)).detach().to(self.device)
+        old_proprioception_states = torch.squeeze(torch.stack(state_proprioception)).detach().to(self.device)
 
         loss_actor = None
         loss_entropy = None
@@ -111,7 +117,10 @@ class Agent:
             loss_actor = -torch.min(surr1, surr2)
             loss_entropy = -0.01 * dist_entropy
             loss_critic = 0.5 * self.critic_loss(state_values, rewards)
-            loss_intrinsic = 10 * self.intrinsic_loss(state_intrinsic, pred_state)
+
+            pred_state = self.trans_inverse_rgb(pred_state)
+
+            loss_intrinsic = 1-self.ssim_loss(state_intrinsic, pred_state)
 
             loss = loss_actor + loss_entropy + loss_critic + loss_intrinsic
 

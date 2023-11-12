@@ -44,8 +44,7 @@ class Environment(ABC):
         random.seed(self.random_seed)
 
         # Compute image mean and std
-        self.env_mean_rgb, self.env_std_rgb = self._compute_env_mean_std()
-        self.env_mean_gray, self.env_std_gray = self._compute_env_mean_std(height=32, width=64, is_gray=True)
+        self.env_mean_rgb, self.env_std_rgb = self._compute_env_mean_std(height=64, width=128)
 
     def __str__(self) -> str:
         return self._name
@@ -145,7 +144,7 @@ class Environment(ABC):
         self.pr.stop()
         self.pr.shutdown()
 
-    def _compute_env_mean_std(self, width=128, height=64, n_observations_computation=5, is_gray: bool = False):
+    def _compute_env_mean_std(self, width=128, height=64, n_observations_computation=500, is_gray: bool = False):
 
         obs = self.reset()
 

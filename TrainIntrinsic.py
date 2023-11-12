@@ -66,15 +66,18 @@ class TrainIntrinsic(Main):
                         # Build new state from new observation
                         _, state_intrinsic = self._build_state_from_observations(new_observation)
 
+                        # Denormalize intrinsic and predicted states
+                        state_intrinsic = self.trans_inverse_rgb(state_intrinsic)
+                        state_pred = self.trans_inverse_rgb(state_pred)
+
                         # Compute the intrinsic reward
-                        int_reward, state_intrinsic_flatten = self.agent.compute_intrinsic_reward(state_intrinsic,
-                                                                                                  state_pred)
+                        int_reward = self.agent.compute_intrinsic_reward(state_intrinsic, state_pred)
 
                         # Save rollout to memory
                         self.memory.rewards_ext.append(ext_reward)
                         self.memory.rewards_int.append(int_reward.data.cpu().numpy())
                         self.memory.states.append(state_flatten)
-                        self.memory.states_intrinsic.append(state_intrinsic_flatten)
+                        self.memory.states_intrinsic.append(state_intrinsic)
                         self.memory.actions.append(action.squeeze())
                         self.memory.logprobs.append(logprob.squeeze())
                         self.memory.is_terminals.append(j == self.n_trajectory - 1)
@@ -121,7 +124,6 @@ class TrainIntrinsic(Main):
     def _build_state_from_observations(self, old_observation):
 
         image_tensor_rgb = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
-        image_tensor_gray = torch.empty((len(old_observation), 1, 32, 128), dtype=torch.float, device=self.device)
         proprioception_tensor = torch.empty((len(old_observation), 26), dtype=torch.float, device=self.device)
 
         for i, o in enumerate(old_observation):
@@ -132,24 +134,19 @@ class TrainIntrinsic(Main):
             image_top_tensor_rgb = self.trans_rgb(image_top)
             image_front_tensor_rgb = self.trans_rgb(image_front)
 
-            image_top_tensor_gray = self.trans_gray(image_top)
-            image_front_tensor_gray = self.trans_gray(image_front)
-
             # Cat all images into a single one
             images_stacked_rgb = torch.cat((image_top_tensor_rgb, image_front_tensor_rgb), dim=1)
-            images_stacked_gray = torch.cat((image_top_tensor_gray, image_front_tensor_gray), dim=2)
 
             image_tensor_rgb[i] = images_stacked_rgb
-            image_tensor_gray[i] = images_stacked_gray
 
             # Save the proprioception information
-            proprioception_tensor[i] = torch.tensor(o["proprioception"], device=self.device)
+            proprioception_tensor[i] = torch.as_tensor(o["proprioception"], device=self.device)
 
         state_vision_rgb = image_tensor_rgb.flatten(0, 1)
         state_proprioception = proprioception_tensor.flatten(0, 1)
 
         # Get last observation
-        state_intrinsic = image_tensor_gray[0][-1]
+        state_intrinsic = image_tensor_rgb[-1].unsqueeze(0)
 
         # Build state
         return (state_vision_rgb, state_proprioception), state_intrinsic
@@ -157,7 +154,6 @@ class TrainIntrinsic(Main):
     def _format_intrinsic_video(self, intrinsic_frames) -> np.array:
 
         trans = transforms.Compose([
-            NormalizeInverse(self.env.env_mean_gray, self.env.env_std_gray),
             transforms.ToPILImage(),
         ])
 
@@ -169,14 +165,12 @@ class TrainIntrinsic(Main):
 
         for index, o in enumerate(frames):
 
-            prediction = o["prediction"].view(1, o["groundtruth"].shape[0], o["groundtruth"].shape[1])
-            groundtruth = o["groundtruth"].unsqueeze(0)
+            prediction = o["prediction"].squeeze(0)
+            groundtruth = o["groundtruth"].squeeze(0)
 
-            image_array = np.concatenate((trans(groundtruth), trans(prediction)), axis=0)
+            image_array = np.concatenate((trans(groundtruth), trans(prediction)), axis=1)
 
-            image = Image.fromarray(image_array, mode="L")
-
-            image = image.convert('RGB')
+            image = Image.fromarray(image_array, mode="RGB")
 
             video.append(np.asarray(image))
 

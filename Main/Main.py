@@ -30,7 +30,7 @@ class Main:
         self.model_name = model_name
 
         self.n_steps = 3E6
-        self.n_rollout = 24
+        self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-4
@@ -53,7 +53,7 @@ class Main:
         self.process_wandb = None
         self.in_queues_wandb = None
         self.trans_rgb = None
-        self.trans_gray = None
+        self.trans_inverse_rgb = None
 
         # Set the seed
         torch.manual_seed(self.random_seed)
@@ -71,7 +71,14 @@ class Main:
 
         print(f"\n[*] Device: {self.device}")
 
+        # Build the environment
+        self.env = environment(
+            headless=headless,
+            random_seed=self.random_seed
+        )
+
         self.agent = agent(
+            env=self.env,
             action_dim=self.action_dim,
             action_std=self.action_std,
             lr=self.lr,
@@ -85,12 +92,6 @@ class Main:
 
         # Build the agent's memory
         self.memory = memory()
-
-        # Build the environment
-        self.env = environment(
-            headless=headless,
-            random_seed=self.random_seed
-        )
 
     def start_train(self) -> None:
 
@@ -128,11 +129,8 @@ class Main:
             transforms.Normalize(self.env.env_mean_rgb, self.env.env_std_rgb)
         ])
 
-        self.trans_gray = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Resize((32, 64)),
-            transforms.Grayscale(),
-            transforms.Normalize(self.env.env_mean_gray, self.env.env_std_gray)
+        self.trans_inverse_rgb = transforms.Compose([
+            NormalizeInverse(self.env.env_mean_rgb, self.env.env_std_rgb),
         ])
 
         # Wandb queue and process
@@ -160,8 +158,6 @@ class Main:
             'gamma': self.gamma,
             'env_mean_rgb': self.env.env_mean_rgb.tolist(),
             'env_std_rgb': self.env.env_std_rgb.tolist(),
-            'env_mean_gray': self.env.env_mean_gray.tolist(),
-            'env_std_gray': self.env.env_std_gray.tolist(),
             "num_parameters": self.num_parameters,
             "random_seed": self.random_seed
         }
@@ -397,7 +393,7 @@ def _save_csv(file_path: str, info: dict) -> None:
 def _format_video_wandb(last_obs_rollout) -> np.array:
     trans = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Resize((128, 256)),
+        transforms.Resize((32, 64)),
         transforms.ToPILImage(),
     ])
 

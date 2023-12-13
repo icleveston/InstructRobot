@@ -29,7 +29,7 @@ class Main:
         # Training params
         self.model_name = model_name
 
-        self.n_steps = 3E6
+        self.n_steps = 5E5
         self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0
@@ -244,15 +244,17 @@ class Main:
         if print_table:
             print(table)
 
-    def _load_checkpoint(self, load_best_checkpoint=False):
+    def _load_checkpoint(self, load_best_checkpoint=True):
 
         print(f"[*] Loading checkpoint from {self.checkpoint_path}")
 
         # Define which checkpoint to load
-        filename = "best_checkpoint.tar" if load_best_checkpoint else "last_checkpoint.tar"
+        filename = "best_checkpoint.pth" if load_best_checkpoint else "last_checkpoint.pth"
 
         # Set the checkpoint path
         checkpoint_path = os.path.join(self.checkpoint_path, filename)
+
+        print(checkpoint_path)
 
         # Load the checkpoint
         checkpoint = torch.load(checkpoint_path)
@@ -421,7 +423,7 @@ def _format_video_wandb(last_obs_rollout) -> np.array:
 
 def _save_checkpoint(checkpoint_path: str, checkpoint: dict, is_best_checkpoint: bool) -> None:
     # Set the checkpoint path
-    ckpt_path = os.path.join(checkpoint_path, "last_checkpoint.tar")
+    ckpt_path = os.path.join(checkpoint_path, "last_checkpoint.pth")
 
     # Save the checkpoint
     torch.save(checkpoint, ckpt_path)
@@ -429,4 +431,4 @@ def _save_checkpoint(checkpoint_path: str, checkpoint: dict, is_best_checkpoint:
     # Save the best checkpoint
     if is_best_checkpoint:
         # Copy the last checkpoint to the best checkpoint
-        shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_checkpoint.tar"))
+        shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_checkpoint.pth"))

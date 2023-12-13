@@ -6,7 +6,7 @@ from torch.autograd import Function
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, action_dim, action_std, device):
+    def __init__(self, action_dim, action_std, env_min_values, env_max_values, device):
         super(ActorCritic, self).__init__()
 
         self.device = device
@@ -32,7 +32,7 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 1)
         )
 
-        self.intrinsic = Intrinsic2()
+        self.intrinsic = Intrinsic2(env_min_values, env_max_values)
 
         self.action_var = torch.full((action_dim,), self.action_std).to(self.device)
 
@@ -184,8 +184,11 @@ class Intrinsic(nn.Module):
 
 
 class Intrinsic2(nn.Module):
-    def __init__(self, C=64, M=192, in_chan=9, out_chan=3):
+    def __init__(self, env_min_values, env_max_values, C=64, M=192, in_chan=9, out_chan=3):
         super(Intrinsic2, self).__init__()
+
+        self.env_min_values = env_min_values
+        self.env_max_values = env_max_values
 
         self.proprioception = nn.Linear(3 * 26, 256)
         self.action = nn.Linear(26, 256)
@@ -227,7 +230,9 @@ class Intrinsic2(nn.Module):
 
         x = torch.cat([code, t], dim=1)
 
-        out = self.decoder(x)
+        y = self.decoder(x)
+
+        out = torch.stack([F.hardtanh(y[:, i, :, :], min_val=min_value, max_val=max_value) for i, (min_value, max_value) in enumerate(zip(self.env_min_values, self.env_max_values))]).permute(1,0,2,3)
 
         return out
 

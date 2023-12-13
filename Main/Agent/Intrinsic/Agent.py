@@ -18,7 +18,7 @@ class Agent:
         self.k_epochs = k_epochs
         self.device = device
 
-        self.policy = ActorCritic(action_dim, action_std, self.device).to(self.device)
+        self.policy = ActorCritic(action_dim, action_std, self.env.env_min_values, self.env.env_max_values, self.device).to(self.device)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
 
         self.scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -28,7 +28,7 @@ class Agent:
             total_iters=total_iters
         )
 
-        self.policy_old = ActorCritic(action_dim, action_std, self.device).to(self.device)
+        self.policy_old = ActorCritic(action_dim, action_std, self.env.env_min_values, self.env.env_max_values, self.device).to(self.device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
         self.critic_loss: nn.MSELoss = nn.MSELoss()

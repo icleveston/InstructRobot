@@ -28,6 +28,8 @@ class Environment(ABC):
         self.random_seed = random_seed
         self.env_mean = None
         self.env_std = None
+        self.env_min_values = None
+        self.env_max_values = None
 
         self.pr = PyRep()
         self.pr.launch(self._scene_file, headless=headless)
@@ -44,7 +46,7 @@ class Environment(ABC):
         random.seed(self.random_seed)
 
         # Compute image mean and std
-        self.env_mean_rgb, self.env_std_rgb = self._compute_env_mean_std(height=64, width=128)
+        self.env_mean_rgb, self.env_std_rgb, self.env_min_values, self.env_max_values = self._compute_env_stat_metrics(height=64, width=128)
 
     def __str__(self) -> str:
         return self._name
@@ -144,7 +146,7 @@ class Environment(ABC):
         self.pr.stop()
         self.pr.shutdown()
 
-    def _compute_env_mean_std(self, width=128, height=64, n_observations_computation=500, is_gray: bool = False):
+    def _compute_env_stat_metrics(self, width=128, height=64, n_observations_computation=500, is_gray: bool = False):
 
         obs = self.reset()
 
@@ -186,7 +188,22 @@ class Environment(ABC):
 
                 index += 1
 
-        return _online_mean_and_sd(image_tensor, is_gray)
+        mean_images, std_images = _online_mean_and_sd(image_tensor, is_gray)
+
+        transformations_norm = [
+            transforms.Normalize(mean=mean_images, std=std_images)
+        ]
+        trans = transforms.Compose(transformations_norm)
+        image_tensor = trans(image_tensor)
+        if is_gray:
+            min_values = torch.min(image_tensor)
+            max_values = torch.max(image_tensor)
+        else:
+            min_values = torch.min(image_tensor[:,0,:,:]), torch.min(image_tensor[:,1,:,:]), torch.min(image_tensor[:,2,:,:])
+            max_values = torch.max(image_tensor[:,0,:,:]), torch.max(image_tensor[:,1,:,:]), torch.max(image_tensor[:,2,:,:])
+
+
+        return mean_images, std_images, list(min_values), list(max_values)
 
 
 def _online_mean_and_sd(images: np.array, is_gray: bool = False) -> tuple:
@@ -204,4 +221,3 @@ def _online_mean_and_sd(images: np.array, is_gray: bool = False) -> tuple:
     cnt += nb_pixels
 
     return fst_moment, torch.sqrt(snd_moment - fst_moment ** 2)
-

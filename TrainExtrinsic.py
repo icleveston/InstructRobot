@@ -1,32 +1,34 @@
 import argparse
-import random
-import torch
-from torchvision import transforms
 import os
-import time
-import numpy as np
-from PIL import Image, ImageFont, ImageDraw
-from tqdm import tqdm
 import shutil
+import torch
 import wandb
-import multiprocessing
-from csv import writer
+import numpy as np
+import random
+import time
 from prettytable import PrettyTable
-from multiprocessing import Process, JoinableQueue
+from multiprocessing import JoinableQueue
+from torchvision import transforms
+from PIL import Image, ImageFont, ImageDraw
+from csv import writer
+from multiprocessing import Process
+from tqdm import tqdm
+import multiprocessing
+
 from Utils import NormalizeInverse
-from Main.Agent.Intrinsic import Memory
-from Main.Agent.Intrinsic import Agent
-from Main.Environment.CubeSimpleIntEnv import CubeSimpleIntEnv
+from Main.Agent.Extrinsic import Memory
+from Main.Agent.Extrinsic import Agent
+from Main.Environment.CubeSimpleExtEnv import CubeSimpleExtEnv
+
 
 torch.set_printoptions(threshold=10_000)
 
 torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=False)
 
 
-class TrainIntrinsic():
+class TrainExtrinsic():
 
     def __init__(self, headless: bool = False, model_name: str = None, gpu: int = 0):
-
         # Set the default cuda card
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
@@ -76,7 +78,7 @@ class TrainIntrinsic():
         print(f"\n[*] Device: {self.device}")
 
         # Build the environment
-        self.env = CubeSimpleIntEnv(
+        self.env = CubeSimpleExtEnv(
             headless=headless,
             random_seed=self.random_seed
         )
@@ -110,7 +112,6 @@ class TrainIntrinsic():
                 self.agent.policy.train()
 
                 observations = [[] for _ in range(self.n_rollout)]
-                intrinsic_frames = [[] for _ in range(self.n_rollout)]
 
                 # For each rollout
                 for r in range(self.n_rollout):
@@ -128,57 +129,34 @@ class TrainIntrinsic():
                         # Select action from the agent
                         action, logprob = self.agent.select_action(state_flatten)
 
-                        # Predict the next state
-                        state_pred = self.agent.predict_next_state(state_flatten, action)
-
                         # Execute action in the simulator
                         new_observation, ext_reward = self.env.step(action.squeeze().data.cpu().numpy())
 
-                        # Build new state from new observation
-                        _, state_intrinsic = self._build_state_from_observations(new_observation)
-
-                        # Denormalize intrinsic and predicted states
-                        state_intrinsic = self.trans_inverse_rgb(state_intrinsic)
-                        state_pred = self.trans_inverse_rgb(state_pred)
-
-                        # Compute the intrinsic reward
-                        int_reward = self.agent.compute_intrinsic_reward(state_intrinsic, state_pred)
 
                         # Save rollout to memory
-                        self.memory.rewards_ext.append(ext_reward)
-                        self.memory.rewards_int.append(int_reward.data.cpu().numpy())
+                        self.memory.rewards.append(ext_reward)
                         self.memory.states.append(state_flatten)
-                        self.memory.states_intrinsic.append(state_intrinsic)
                         self.memory.actions.append(action.squeeze())
                         self.memory.logprobs.append(logprob.squeeze())
                         self.memory.is_terminals.append(j == self.n_trajectory - 1)
-
-                        # Append intrinsic frames
-                        intrinsic_frames[r].append({"groundtruth": state_intrinsic, "prediction": state_pred})
 
                         # Update observation
                         old_observation = new_observation
 
                 # Update the weights
-                loss_actor, loss_entropy, loss_critic, loss_intrinsic = self.agent.update(self.memory)
+                loss_actor, loss_entropy, loss_critic = self.agent.update(self.memory)
 
                 # Pack loss into a dictionary
                 loss_info = {
                     "actor": loss_actor.cpu().data.numpy(),
                     "critic": loss_critic.cpu().data.numpy(),
-                    "intrinsic": loss_intrinsic.cpu().data.numpy(),
                     "entropy": loss_entropy.cpu().data.numpy()
-                }
-
-                # Pack video to log
-                video_info = {
-                    "intrinsic_pred": self._format_intrinsic_video(intrinsic_frames)
                 }
 
                 self.current_step += self.n_trajectory * self.n_rollout
 
                 # Process rollout conclusion
-                description = self._process_rollout(loss_info, video_info, observations)
+                description = self._process_rollout(loss_info, observations)
 
                 # Set the var description
                 pbar.set_description(description)
@@ -191,6 +169,7 @@ class TrainIntrinsic():
 
         # Kill all process
         self.process_wandb.kill()
+
 
     def _build_state_from_observations(self, old_observation):
 
@@ -222,34 +201,6 @@ class TrainIntrinsic():
         # Build state
         return (state_vision_rgb, state_proprioception), state_intrinsic
 
-    def _format_intrinsic_video(self, intrinsic_frames) -> np.array:
-
-        trans = transforms.Compose([
-            transforms.ToPILImage(),
-        ])
-
-        # Random a rollout to sample
-        random_sample_index = random.randint(0, len(intrinsic_frames) - 1)
-        frames = intrinsic_frames[random_sample_index]
-
-        video = []
-
-        for index, o in enumerate(frames):
-
-            prediction = o["prediction"].squeeze(0)
-            groundtruth = o["groundtruth"].squeeze(0)
-
-            image_array = np.concatenate((trans(groundtruth), trans(prediction)), axis=1)
-
-            image = Image.fromarray(image_array, mode="RGB")
-
-            video.append(np.asarray(image))
-
-        video = np.asarray(video)
-
-        video = np.transpose(video, (0, 3, 1, 2))
-
-        return video
 
     def _start_train(self) -> None:
 
@@ -329,7 +280,7 @@ class TrainIntrinsic():
         # Start timer
         self.tic = time.time()
 
-    def _process_rollout(self, loss_info: dict, video_info: dict, observations) -> str:
+    def _process_rollout(self, loss_info: dict, observations) -> str:
 
         # Measure elapsed time
         self.elapsed_time = time.time() - self.tic
@@ -348,7 +299,6 @@ class TrainIntrinsic():
         states_info = {
             'actor_state': self.agent.policy.actor.state_dict(),
             'critic_state': self.agent.policy.critic.state_dict(),
-            'intrinsic_state': self.agent.policy.intrinsic.state_dict(),
             'optim_state': self.agent.optimizer.state_dict(),
             'scheduler_state': self.agent.scheduler.state_dict()
         }
@@ -370,7 +320,7 @@ class TrainIntrinsic():
         self.best_mean_episodic_return = max(mean_std_info["mean"], self.best_mean_episodic_return)
 
         # Send data to wandb process
-        self.in_queues_wandb.put((mean_std_info, loss_info, params_info, states_info, video_info, observations))
+        self.in_queues_wandb.put((mean_std_info, loss_info, params_info, states_info, observations))
         self.in_queues_wandb.join()
 
         # Return description
@@ -423,7 +373,6 @@ class TrainIntrinsic():
         self.best_mean_episodic_return = checkpoint["best_mean_episodic_return"]
         self.agent.policy.actor.load_state_dict(checkpoint["actor_state"])
         self.agent.policy.critic.load_state_dict(checkpoint["critic_state"])
-        self.agent.policy.intrinsic.load_state_dict(checkpoint["intrinsic_state"])
         self.agent.optimizer.load_state_dict(checkpoint["optim_state"])
         self.agent.scheduler.load_state_dict(checkpoint["scheduler_state"])
 
@@ -435,6 +384,75 @@ class TrainIntrinsic():
 
 def _percentage_error_formula(x: float, amount_variation: float) -> float:
     return round(x / amount_variation * 100, 3)
+
+
+def _save_wandb(in_queue,
+                is_new_execution: bool,
+                env_name: str,
+                model_name: str,
+                info_path: str,
+                checkpoint_path: str) -> None:
+    # Init Wandb
+    wandb.init(
+        project=env_name,
+        name=model_name,
+        id=model_name,
+        resume=model_name if not is_new_execution else False
+    )
+
+    while True:
+        data = in_queue.get()
+        in_queue.task_done()
+
+        # Unpack data
+        mean_std_info, loss_info, params_info, states_info, observations = data
+
+        # Random a rollout to sample
+        random_sample_index = random.randint(0, len(observations) - 1)
+        observation = observations[random_sample_index]
+
+        # Create loss description
+        loss_description = {f"loss_{loss_name}": loss_value for loss_name, loss_value in loss_info.items()}
+
+        # Create the dynamic video log
+        #video_log = {f"video_{video_name}": wandb.Video(video_value, fps=8) \
+        #             for video_name, video_value in video_info.items()}
+
+        # Create the wandb log
+        wandb_log = {
+            "mean_episodic_return": mean_std_info["mean"],
+            "lr": np.float32(params_info["lr"]),
+            "action_std": np.float32(params_info["action_std"]),
+            "eps": np.float32(params_info["eps_clip"]),
+            "video_front_top": wandb.Video(_format_video_wandb(observation), fps=8),
+            # f"actions-{current_step}": wandb.Table(columns=[f"a{i}" for i in range(26)], data=actions)
+        }
+
+        # Update log with other attributes
+        wandb_log.update(loss_description)
+        #wandb_log.update(video_log)
+
+        # Log Wandb
+        wandb.log(wandb_log, step=params_info["step"])
+
+        # Join all information
+        loss_info.update(params_info)
+        loss_info.update(mean_std_info)
+
+        # Save training history
+        _save_csv(os.path.join(info_path, 'history.csv'), loss_info)
+
+        # Check if it is the best rollout
+        is_best_rollout: bool = mean_std_info["mean"] > params_info["best_mean_episodic_return"]
+
+        # Save the observations for each rollout
+        _save_observation(info_path, observations, is_best_rollout)
+
+        # Include states info into params
+        params_info.update(states_info)
+
+        # Save the checkpoint for each rollout
+        _save_checkpoint(checkpoint_path, params_info, is_best_rollout)
 
 
 def _save_observation(info_path: str, observations, is_best_rollout: bool):
@@ -499,75 +517,6 @@ def _format_video_wandb(last_obs_rollout) -> np.array:
     return video
 
 
-def _save_wandb(in_queue,
-                is_new_execution: bool,
-                env_name: str,
-                model_name: str,
-                info_path: str,
-                checkpoint_path: str) -> None:
-    # Init Wandb
-    wandb.init(
-        project=env_name,
-        name=model_name,
-        id=model_name,
-        resume=model_name if not is_new_execution else False
-    )
-
-    while True:
-        data = in_queue.get()
-        in_queue.task_done()
-
-        # Unpack data
-        mean_std_info, loss_info, params_info, states_info, video_info, observations = data
-
-        # Random a rollout to sample
-        random_sample_index = random.randint(0, len(observations) - 1)
-        observation = observations[random_sample_index]
-
-        # Create loss description
-        loss_description = {f"loss_{loss_name}": loss_value for loss_name, loss_value in loss_info.items()}
-
-        # Create the dynamic video log
-        video_log = {f"video_{video_name}": wandb.Video(video_value, fps=8) \
-                     for video_name, video_value in video_info.items()}
-
-        # Create the wandb log
-        wandb_log = {
-            "mean_episodic_return": mean_std_info["mean"],
-            "lr": np.float32(params_info["lr"]),
-            "action_std": np.float32(params_info["action_std"]),
-            "eps": np.float32(params_info["eps_clip"]),
-            "video_front_top": wandb.Video(_format_video_wandb(observation), fps=8),
-            # f"actions-{current_step}": wandb.Table(columns=[f"a{i}" for i in range(26)], data=actions)
-        }
-
-        # Update log with other attributes
-        wandb_log.update(loss_description)
-        wandb_log.update(video_log)
-
-        # Log Wandb
-        wandb.log(wandb_log, step=params_info["step"])
-
-        # Join all information
-        loss_info.update(params_info)
-        loss_info.update(mean_std_info)
-
-        # Save training history
-        _save_csv(os.path.join(info_path, 'history.csv'), loss_info)
-
-        # Check if it is the best rollout
-        is_best_rollout: bool = mean_std_info["mean"] > params_info["best_mean_episodic_return"]
-
-        # Save the observations for each rollout
-        _save_observation(info_path, observations, is_best_rollout)
-
-        # Include states info into params
-        params_info.update(states_info)
-
-        # Save the checkpoint for each rollout
-        _save_checkpoint(checkpoint_path, params_info, is_best_rollout)
-
-
 def _save_checkpoint(checkpoint_path: str, checkpoint: dict, is_best_checkpoint: bool) -> None:
     # Set the checkpoint path
     ckpt_path = os.path.join(checkpoint_path, "last_checkpoint.pth")
@@ -579,6 +528,7 @@ def _save_checkpoint(checkpoint_path: str, checkpoint: dict, is_best_checkpoint:
     if is_best_checkpoint:
         # Copy the last checkpoint to the best checkpoint
         shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_checkpoint.pth"))
+
 
 
 def parse_arguments():
@@ -596,4 +546,4 @@ if __name__ == "__main__":
 
     args = parse_arguments()
 
-    TrainIntrinsic(headless=True, model_name=args['model_name'], gpu=args['gpu']).train()
+    TrainExtrinsic(headless=True, model_name=args['model_name'], gpu=args['gpu']).train()

@@ -1,35 +1,39 @@
+import argparse
+from tqdm import tqdm
+import multiprocessing
 import os
 import shutil
 import torch
-import torchvision
 import wandb
 import numpy as np
 import random
 import time
 from prettytable import PrettyTable
-from multiprocessing import JoinableQueue
 from torchvision import transforms
 from PIL import Image, ImageFont, ImageDraw
 from csv import writer
-from multiprocessing import Process
+from multiprocessing import Process, JoinableQueue
+from Utils import NormalizeInverse
+from Main.Agent.Extrinsic_task import Memory
+from Main.Agent.Extrinsic_task import Agent
+from Main.Environment.CubeSimpleExtEnv import CubeSimpleExtEnv
+
 
 torch.set_printoptions(threshold=10_000)
 
 torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=False)
 
+class TrainTask():
 
-class Main:
-
-    def __init__(self, environment, agent, memory, headless: bool = True, model_name: str = None, gpu: int = 0):
-
+    def __init__(self, headless: bool = False, model_name: str = None, model_intrinsic: str = None, gpu: int = 0):
         # Set the default cuda card
-
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
         # Training params
         self.model_name = model_name
+        self.model_intrinsic = model_intrinsic
 
-        self.n_steps = 5E5
+        self.n_steps = 230_000
         self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0
@@ -72,12 +76,12 @@ class Main:
         print(f"\n[*] Device: {self.device}")
 
         # Build the environment
-        self.env = environment(
+        self.env = CubeSimpleExtEnv(
             headless=headless,
             random_seed=self.random_seed
         )
 
-        self.agent = agent(
+        self.agent = Agent(
             env=self.env,
             action_dim=self.action_dim,
             action_std=self.action_std,
@@ -91,36 +95,125 @@ class Main:
         )
 
         # Build the agent's memory
-        self.memory = memory()
+        self.memory = Memory()
 
-    def start_train(self) -> None:
+    def train(self) -> None:
+
+        # Start training
+        self._start_train()
+
+        with (tqdm(total=self.n_steps) as pbar):
+
+            while self.current_step < self.n_steps:
+
+                # Train one rollout
+                self.agent.policy.train()
+
+                observations = [[] for _ in range(self.n_rollout)]
+
+                # For each rollout
+                for r in range(self.n_rollout):
+
+                    # Get the first observation
+                    old_observation = self.env.reset()
+
+                    for j in range(self.n_trajectory):
+                        # Save observations
+                        observations[r].append(old_observation.copy())
+
+                        # Build state from observation
+                        state_flatten, _ = self._build_state_from_observations(old_observation)
+
+                        # Select action from the agent
+                        action, logprob = self.agent.select_action(state_flatten)
+
+                        # Execute action in the simulator
+                        new_observation, ext_reward = self.env.step(action.squeeze().data.cpu().numpy())
+
+
+                        # Save rollout to memory
+                        self.memory.rewards.append(ext_reward)
+                        self.memory.states.append(state_flatten)
+                        self.memory.actions.append(action.squeeze())
+                        self.memory.logprobs.append(logprob.squeeze())
+                        self.memory.is_terminals.append(j == self.n_trajectory - 1)
+
+                        # Update observation
+                        old_observation = new_observation
+
+                # Update the weights
+                loss_actor, loss_entropy, loss_critic = self.agent.update(self.memory)
+
+                # Pack loss into a dictionary
+                loss_info = {
+                    "actor": loss_actor.cpu().data.numpy(),
+                    "critic": loss_critic.cpu().data.numpy(),
+                    "entropy": loss_entropy.cpu().data.numpy()
+                }
+
+                self.current_step += self.n_trajectory * self.n_rollout
+
+                # Process rollout conclusion
+                description = self._process_rollout(loss_info, observations)
+
+                # Set the var description
+                pbar.set_description(description)
+
+                # Update the bar
+                pbar.update(self.n_trajectory * self.n_rollout)
+
+                # Clear the memory
+                self.memory.clear_memory()
+
+        # Kill all process
+        self.process_wandb.kill()
+
+    def _start_train(self) -> None:
 
         is_new_execution: bool = False
-
         # If model_name is none, create a new one
-        if self.model_name is None:
-            folder_time = time.strftime("%Y_%m_%d_%H_%M_%S")
-
-            self.model_name = f"{self.env}_{folder_time}"
-
-            is_new_execution = True
+        if self.model_intrinsic is None:
+            raise ValueError("model_intrinsic must be specified.")
 
         # Set the folders
-        self.output_path = os.path.join('out', self.model_name)
+        self.output_path = os.path.join('out', self.model_intrinsic)
         self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
         self.info_path = os.path.join(self.output_path, 'info')
 
-        # Create the folders
-        if not os.path.exists(self.output_path):
-            os.makedirs(self.output_path)
-        if not os.path.exists(self.checkpoint_path):
-            os.makedirs(self.checkpoint_path)
-        if not os.path.exists(self.info_path):
-            os.makedirs(self.info_path)
+        self._load_checkpoint_intrinsic()
 
-        # If it is not a new execution, load the model
-        if not is_new_execution:
+        if self.model_name is None:
+            is_new_execution = True
+            print(f'new execution!!!')
+            folder_time = time.strftime("%Y_%m_%d_%H_%M_%S")
+
+            self.model_name = f"{self.model_intrinsic}_execution_{folder_time}_task"
+
+            self.output_path = os.path.join('out', self.model_name)
+            self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
+            self.info_path = os.path.join(self.output_path, 'info')
+
+            # Create the folders
+            if not os.path.exists(self.output_path):
+                os.makedirs(self.output_path)
+            if not os.path.exists(self.checkpoint_path):
+                os.makedirs(self.checkpoint_path)
+            if not os.path.exists(self.info_path):
+                os.makedirs(self.info_path)
+        else:
+            print(f'not new execution')
+            self.output_path = os.path.join('out', self.model_name)
+            self.checkpoint_path = os.path.join(self.output_path, 'checkpoint')
+            self.info_path = os.path.join(self.output_path, 'info')
             self._load_checkpoint(load_best_checkpoint=False)
+
+        actor_train = ['actor.3.weight', 'actor.3.bias']
+        for name, param in self.agent.policy.actor.named_parameters():
+            param.requires_grad = True if name in actor_train else False
+        critic_train = ['critic.3.weight', 'critic.3.bias']
+        for name, param in self.agent.policy.critic.named_parameters():
+            param.requires_grad = True if name in critic_train else False
+
 
         # Compose the transformations
         self.trans_rgb = transforms.Compose([
@@ -171,7 +264,39 @@ class Main:
         # Start timer
         self.tic = time.time()
 
-    def process_rollout(self, loss_info: dict, video_info: dict, observations) -> str:
+
+
+    def _build_state_from_observations(self, old_observation):
+
+        image_tensor_rgb = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
+        proprioception_tensor = torch.empty((len(old_observation), 26), dtype=torch.float, device=self.device)
+
+        for i, o in enumerate(old_observation):
+            image_top = o["frame_top"]
+            image_front = o["frame_front"]
+
+            # Convert state to tensor
+            image_top_tensor_rgb = self.trans_rgb(image_top)
+            image_front_tensor_rgb = self.trans_rgb(image_front)
+
+            # Cat all images into a single one
+            images_stacked_rgb = torch.cat((image_top_tensor_rgb, image_front_tensor_rgb), dim=1)
+
+            image_tensor_rgb[i] = images_stacked_rgb
+
+            # Save the proprioception information
+            proprioception_tensor[i] = torch.as_tensor(o["proprioception"], device=self.device)
+
+        state_vision_rgb = image_tensor_rgb.flatten(0, 1)
+        state_proprioception = proprioception_tensor.flatten(0, 1)
+
+        # Get last observation
+        state_intrinsic = image_tensor_rgb[-1].unsqueeze(0)
+
+        # Build state
+        return (state_vision_rgb, state_proprioception), state_intrinsic
+
+    def _process_rollout(self, loss_info: dict, observations) -> str:
 
         # Measure elapsed time
         self.elapsed_time = time.time() - self.tic
@@ -188,10 +313,12 @@ class Main:
 
         # Get states info
         states_info = {
-            'agent_state': self.agent.policy.state_dict(),
+            'actor_state': self.agent.policy.actor.state_dict(),
+            'critic_state': self.agent.policy.critic.state_dict(),
             'optim_state': self.agent.optimizer.state_dict(),
             'scheduler_state': self.agent.scheduler.state_dict()
         }
+
         # Get params info
         params_info = {
             'best_mean_episodic_return': self.best_mean_episodic_return,
@@ -209,7 +336,7 @@ class Main:
         self.best_mean_episodic_return = max(mean_std_info["mean"], self.best_mean_episodic_return)
 
         # Send data to wandb process
-        self.in_queues_wandb.put((mean_std_info, loss_info, params_info, states_info, video_info, observations))
+        self.in_queues_wandb.put((mean_std_info, loss_info, params_info, states_info, observations))
         self.in_queues_wandb.join()
 
         # Return description
@@ -254,15 +381,14 @@ class Main:
         # Set the checkpoint path
         checkpoint_path = os.path.join(self.checkpoint_path, filename)
 
-        print(checkpoint_path)
-
         # Load the checkpoint
         checkpoint = torch.load(checkpoint_path)
 
         # Load the variables from checkpoint
         self.current_step = checkpoint["step"]
         self.best_mean_episodic_return = checkpoint["best_mean_episodic_return"]
-        self.agent.policy.load_state_dict(checkpoint["agent_state"])
+        self.agent.policy.actor.load_state_dict(checkpoint["actor_state"])
+        self.agent.policy.critic.load_state_dict(checkpoint["critic_state"])
         self.agent.optimizer.load_state_dict(checkpoint["optim_state"])
         self.agent.scheduler.load_state_dict(checkpoint["scheduler_state"])
 
@@ -271,22 +397,27 @@ class Main:
         else:
             print(f"[*] Loaded last checkpoint @ step {self.current_step}")
 
+    def _load_checkpoint_intrinsic(self):
 
-class NormalizeInverse(torchvision.transforms.Normalize):
-    """
-    Undoes the normalization and returns the reconstructed images in the input domain.
-    """
+        print(f"[*] Loading checkpoint from {self.checkpoint_path}")
 
-    def __init__(self, mean, std):
-        std_inv = 1 / (std + 1e-7)
-        mean_inv = -mean * std_inv
-        super().__init__(mean=mean_inv, std=std_inv)
+        # Define which checkpoint to load
+        filename = "last_checkpoint.pth"
 
-    def __call__(self, tensor):
-        return super().__call__(tensor.clone())
+        # Set the checkpoint path
+        checkpoint_path = os.path.join(self.checkpoint_path, filename)
+
+        # Load the checkpoint
+        checkpoint = torch.load(checkpoint_path)
+
+        # Load the variables from checkpoint
+        self.agent.policy.actor.load_state_dict(checkpoint["actor_state"])
+        self.agent.policy.critic.load_state_dict(checkpoint["critic_state"])
+
+        print(f"[*] Loaded last checkpoint intrinsic model @ step {self.current_step}")
 
 
-def percentage_error_formula(x: float, amount_variation: float) -> float:
+def _percentage_error_formula(x: float, amount_variation: float) -> float:
     return round(x / amount_variation * 100, 3)
 
 
@@ -309,7 +440,7 @@ def _save_wandb(in_queue,
         in_queue.task_done()
 
         # Unpack data
-        mean_std_info, loss_info, params_info, states_info, video_info, observations = data
+        mean_std_info, loss_info, params_info, states_info, observations = data
 
         # Random a rollout to sample
         random_sample_index = random.randint(0, len(observations) - 1)
@@ -319,8 +450,7 @@ def _save_wandb(in_queue,
         loss_description = {f"loss_{loss_name}": loss_value for loss_name, loss_value in loss_info.items()}
 
         # Create the dynamic video log
-        video_log = {f"video_{video_name}": wandb.Video(video_value, fps=8) \
-                     for video_name, video_value in video_info.items()}
+
 
         # Create the wandb log
         wandb_log = {
@@ -334,7 +464,6 @@ def _save_wandb(in_queue,
 
         # Update log with other attributes
         wandb_log.update(loss_description)
-        wandb_log.update(video_log)
 
         # Log Wandb
         wandb.log(wandb_log, step=params_info["step"])
@@ -432,3 +561,23 @@ def _save_checkpoint(checkpoint_path: str, checkpoint: dict, is_best_checkpoint:
     if is_best_checkpoint:
         # Copy the last checkpoint to the best checkpoint
         shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_checkpoint.pth"))
+
+
+def parse_arguments():
+    arg = argparse.ArgumentParser()
+
+    arg.add_argument("--resume", type=str, required=False, dest='model_name',
+                     help="Resume training {model_name}.")
+    arg.add_argument("--resume_intrinsic", type=str, required=False, dest='model_intrinsic',
+                     help="Resume training {model_intrinsic}.")
+    arg.add_argument("--gpu", type=int, default=0, required=False, help="Select the GPU card.")
+
+    return vars(arg.parse_args())
+
+
+if __name__ == "__main__":
+    multiprocessing.set_start_method('spawn')
+
+    args = parse_arguments()
+
+    TrainTask(headless=True, model_name=args['model_name'], model_intrinsic=args['model_intrinsic'], gpu=args['gpu']).train()

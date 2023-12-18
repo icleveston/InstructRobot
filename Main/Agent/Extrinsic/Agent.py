@@ -1,11 +1,15 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from .ActorCritic import ActorCritic
 from .Memory import Memory
+from torchvision import transforms
+from Utils import NormalizeInverse
 
 
 class Agent:
-    def __init__(self, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, device):
+    def __init__(self, env, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, device):
+        self.env = env
         self.lr = lr
         self.betas = betas
         self.gamma = gamma
@@ -26,19 +30,22 @@ class Agent:
         self.policy_old = ActorCritic(action_dim, action_std, self.device).to(self.device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-        self.critic_loss = nn.MSELoss()
+        self.critic_loss: nn.MSELoss = nn.MSELoss()
+
+        self.trans_inverse_rgb = transforms.Compose([
+            NormalizeInverse(self.env.env_mean_rgb, self.env.env_std_rgb),
+        ])
 
     def select_action(self, state):
 
-        state_instruction = state[0]
-        state_vision = state[1]
-        state_proprioception = state[2]
+        state_vision = state[0]
+        state_proprioception = state[1]
 
-        state_instruction = state_instruction.unsqueeze(dim=0)
         state_vision = state_vision.unsqueeze(dim=0)
         state_proprioception = state_proprioception.unsqueeze(dim=0)
 
-        return self.policy_old.act(state_instruction, state_vision, state_proprioception)
+        return self.policy_old.act(state_vision, state_proprioception)
+
 
     def update(self, memory: Memory):
 
@@ -51,37 +58,35 @@ class Agent:
             rewards.insert(0, discounted_reward)
 
         # Normalizing the rewards
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        rewards = torch.as_tensor(np.array(rewards), dtype=torch.float32).to(self.device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
         # Convert list to tensor
-        old_actions = torch.squeeze(torch.stack(memory.actions, dim=0)).detach().to(self.device)
-        old_logprobs = torch.squeeze(torch.stack(memory.logprobs, dim=0)).detach().to(self.device)
+        old_actions = torch.squeeze(torch.stack(memory.actions)).detach().to(self.device)
+        old_logprobs = torch.squeeze(torch.stack(memory.logprobs)).detach().to(self.device)
 
         # Separate states
-        state_instruction = []
         state_vision = []
         state_proprioception = []
         for s in memory.states:
-            state_instruction.append(s[0])
-            state_vision.append(s[1])
-            state_proprioception.append(s[2])
+            state_vision.append(s[0])
+            state_proprioception.append(s[1])
 
-        old_instruction_states = torch.squeeze(torch.stack(state_instruction, dim=0)).detach().to(self.device)
-        old_vision_states = torch.squeeze(torch.stack(state_vision, dim=0)).detach().to(self.device)
-        old_proprioception_states = torch.squeeze(torch.stack(state_proprioception, dim=0)).detach().to(self.device)
+        old_vision_states = torch.squeeze(torch.stack(state_vision)).detach().to(self.device)
+        old_proprioception_states = torch.squeeze(torch.stack(state_proprioception)).detach().to(self.device)
 
         loss_actor = None
         loss_entropy = None
         loss_critic = None
+        loss_intrinsic = None
 
         # Optimize policy for K epochs:
         for _ in range(self.k_epochs):
+
             # Evaluating old actions and values :
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_instruction_states,
-                                                                        old_vision_states,
-                                                                        old_proprioception_states,
-                                                                        old_actions)
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_vision_states,
+                                                                    old_proprioception_states,
+                                                                    old_actions)
 
             # Finding the ratio (pi_theta / pi_theta__old):
             ratios = torch.exp(logprobs - old_logprobs)

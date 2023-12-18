@@ -9,26 +9,21 @@ class ActorCritic(nn.Module):
 
         self.device = device
         self.action_std = action_std
-        self.actor_vision = ConvNet(9, 250)
-        self.actor_instruction = Transformer()
-        self.actor_proprioception = nn.Linear(3 * 26, 250)
+
+        self.actor_vision = ConvNet(9, 128)
+        self.actor_proprioception = nn.Linear(3 * 26, 128)
 
         self.actor = nn.Sequential(
-            nn.Tanh(),
-            nn.Linear(750, 256),
             nn.Tanh(),
             nn.Linear(256, 128),
             nn.Tanh(),
             nn.Linear(128, action_dim)
         )
 
-        self.critic_vision = ConvNet(9, 250)
-        self.critic_instruction = Transformer()
-        self.critic_proprioception = nn.Linear(3 * 26, 250)
+        self.critic_vision = ConvNet(9, 128)
+        self.critic_proprioception = nn.Linear(3 * action_dim, 128)
 
         self.critic = nn.Sequential(
-            nn.Tanh(),
-            nn.Linear(750, 256),
             nn.Tanh(),
             nn.Linear(256, 128),
             nn.Tanh(),
@@ -40,13 +35,11 @@ class ActorCritic(nn.Module):
     def forward(self):
         raise NotImplementedError
 
-    def act(self, state_instruction, state_vision, state_proprioception):
-
-        x_instruction = self.actor_instruction(state_instruction)
+    def act(self, state_vision, state_proprioception):
         x_vision = self.actor_vision(state_vision)
         x_proprioception = self.actor_proprioception(state_proprioception)
 
-        x = torch.cat((x_instruction, x_vision, x_proprioception), dim=1)
+        x = torch.cat((x_vision, x_proprioception), dim=1)
 
         action_mean = self.actor(x)
         cov_mat = torch.diag(self.action_var).to(self.device)
@@ -57,14 +50,11 @@ class ActorCritic(nn.Module):
 
         return action.detach(), action_logprob
 
-    def evaluate(self, state_instruction, state_vision, state_proprioception, action):
-
-        x_instruction_actor = self.actor_instruction(state_instruction)
+    def evaluate(self, state_vision, state_proprioception, action):
+        # Actor
         x_vision_actor = self.actor_vision(state_vision)
         x_proprioception_actor = self.actor_proprioception(state_proprioception)
-
-        x_actor = torch.cat((x_instruction_actor, x_vision_actor, x_proprioception_actor), dim=1)
-
+        x_actor = torch.cat((x_vision_actor, x_proprioception_actor), dim=1)
         action_mean = self.actor(x_actor)
 
         action_var = self.action_var.expand_as(action_mean).to(self.device)
@@ -75,12 +65,10 @@ class ActorCritic(nn.Module):
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
 
-        x_instruction_critic = self.critic_instruction(state_instruction)
+        # Critic
         x_vision_critic = self.critic_vision(state_vision)
         x_proprioception_critic = self.critic_proprioception(state_proprioception)
-
-        x_critic = torch.cat((x_instruction_critic, x_vision_critic, x_proprioception_critic), dim=1)
-
+        x_critic = torch.cat((x_vision_critic, x_proprioception_critic), dim=1)
         state_value = self.critic(x_critic)
 
         return action_logprobs, torch.squeeze(state_value), dist_entropy
@@ -124,22 +112,4 @@ class ConvNet(nn.Module):
 
         return x
 
-
-class Transformer(nn.Module):
-    def __init__(self, vocab_size=10, d_model=50, nhead=2, num_layers=3):
-        super(Transformer, self).__init__()
-
-        self.embedding = nn.Embedding(vocab_size, d_model)
-
-        encoder_layer = nn.TransformerEncoderLayer(d_model, nhead)
-        encoder_norm = nn.LayerNorm(d_model)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers, encoder_norm)
-
-    def forward(self, x):
-        x = self.embedding(x)
-        x = self.transformer_encoder(x)
-
-        x = x.view(x.shape[0], -1)
-
-        return x
 

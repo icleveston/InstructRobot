@@ -12,26 +12,8 @@ class ActorCritic(nn.Module):
         self.device = device
         self.action_std = action_std
 
-        self.actor_vision = ConvNet(9, 128)
-        self.actor_proprioception = nn.Linear(3 * 26, 128)
-
-        self.actor = nn.Sequential(
-            nn.Tanh(),
-            nn.Linear(256, 128),
-            nn.Tanh(),
-            nn.Linear(128, action_dim)
-        )
-
-        self.critic_vision = ConvNet(9, 128)
-        self.critic_proprioception = nn.Linear(3 * action_dim, 128)
-
-        self.critic = nn.Sequential(
-            nn.Tanh(),
-            nn.Linear(256, 128),
-            nn.Tanh(),
-            nn.Linear(128, 1)
-        )
-
+        self.actor = Actor(action_dim)
+        self.critic = Critic(action_dim)
         self.intrinsic = Intrinsic2(env_min_values, env_max_values)
 
         self.action_var = torch.full((action_dim,), self.action_std).to(self.device)
@@ -40,19 +22,14 @@ class ActorCritic(nn.Module):
         raise NotImplementedError
 
     def next_state(self, state_vision, state_proprioception, action):
-
         state_pred = self.intrinsic(state_vision, state_proprioception, action)
 
         return state_pred.detach()
 
     def act(self, state_vision, state_proprioception):
 
-        x_vision = self.actor_vision(state_vision)
-        x_proprioception = self.actor_proprioception(state_proprioception)
+        action_mean = self.actor(state_vision, state_proprioception)
 
-        x = torch.cat((x_vision, x_proprioception), dim=1)
-
-        action_mean = self.actor(x)
         cov_mat = torch.diag(self.action_var).to(self.device)
 
         dist = MultivariateNormal(action_mean, cov_mat, validate_args=False)
@@ -64,10 +41,7 @@ class ActorCritic(nn.Module):
     def evaluate(self, state_vision, state_proprioception, action):
 
         # Actor
-        x_vision_actor = self.actor_vision(state_vision)
-        x_proprioception_actor = self.actor_proprioception(state_proprioception)
-        x_actor = torch.cat((x_vision_actor, x_proprioception_actor), dim=1)
-        action_mean = self.actor(x_actor)
+        action_mean = self.actor(state_vision, state_proprioception)
 
         action_var = self.action_var.expand_as(action_mean).to(self.device)
         cov_mat = torch.diag_embed(action_var).to(self.device)
@@ -78,10 +52,7 @@ class ActorCritic(nn.Module):
         dist_entropy = dist.entropy()
 
         # Critic
-        x_vision_critic = self.critic_vision(state_vision)
-        x_proprioception_critic = self.critic_proprioception(state_proprioception)
-        x_critic = torch.cat((x_vision_critic, x_proprioception_critic), dim=1)
-        state_value = self.critic(x_critic)
+        state_value = self.critic(state_vision, state_proprioception)
 
         # Intrinsic
         state_pred = self.intrinsic(state_vision, state_proprioception, action)
@@ -102,7 +73,6 @@ class ConvNet(nn.Module):
         self.fc1 = nn.Linear(in_features=768, out_features=num_output)
 
     def forward(self, x):
-
         conv1 = self.dconv_down1(x)
         x = self.maxpool(conv1)
 
@@ -127,6 +97,55 @@ def double_conv(in_channels, out_channels):
     )
 
 
+class Actor(nn.Module):
+
+    def __init__(self, action_dim):
+        super().__init__()
+
+        self.actor_vision = ConvNet(9, 128)
+        self.actor_proprioception = nn.Linear(3 * 26, 128)
+
+        self.actor = nn.Sequential(
+            nn.Tanh(),
+            nn.Linear(256, 128),
+            nn.Tanh(),
+            nn.Linear(128, action_dim)
+        )
+
+    def forward(self, state_vision, state_proprioception):
+
+        x_vision = self.actor_vision(state_vision)
+        x_proprioception = self.actor_proprioception(state_proprioception)
+
+        x = torch.cat((x_vision, x_proprioception), dim=1)
+
+        return self.actor(x)
+
+
+class Critic(nn.Module):
+
+    def __init__(self, action_dim):
+        super().__init__()
+
+        self.critic_vision = ConvNet(9, 128)
+        self.critic_proprioception = nn.Linear(3 * action_dim, 128)
+
+        self.critic = nn.Sequential(
+            nn.Tanh(),
+            nn.Linear(256, 128),
+            nn.Tanh(),
+            nn.Linear(128, 1)
+        )
+
+    def forward(self, state_vision, state_proprioception):
+
+        x_vision_critic = self.critic_vision(state_vision)
+        x_proprioception_critic = self.critic_proprioception(state_proprioception)
+        x_critic = torch.cat((x_vision_critic, x_proprioception_critic), dim=1)
+
+        return self.critic(x_critic)
+
+
 class Intrinsic(nn.Module):
 
     def __init__(self):
@@ -149,7 +168,6 @@ class Intrinsic(nn.Module):
         self.conv_last = nn.Conv2d(16, 3, 1)
 
     def forward(self, state_vision, state_proprioception, action):
-
         p = self.proprioception(state_proprioception)
         a = self.action(action)
 
@@ -204,7 +222,7 @@ class Intrinsic2(nn.Module):
         )
 
         self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=C+8, out_channels=M, kernel_size=5, stride=2, padding=2, output_padding=1,
+            nn.ConvTranspose2d(in_channels=C + 8, out_channels=M, kernel_size=5, stride=2, padding=2, output_padding=1,
                                bias=False),
             GDN(M, inverse=True),
             nn.ConvTranspose2d(in_channels=M, out_channels=M, kernel_size=5, stride=2, padding=2, output_padding=1,
@@ -218,7 +236,6 @@ class Intrinsic2(nn.Module):
         )
 
     def forward(self, state_vision, state_proprioception, action):
-
         p = self.proprioception(state_proprioception)
         a = self.action(action)
 
@@ -232,7 +249,9 @@ class Intrinsic2(nn.Module):
 
         y = self.decoder(x)
 
-        out = torch.stack([F.hardtanh(y[:, i, :, :], min_val=min_value, max_val=max_value) for i, (min_value, max_value) in enumerate(zip(self.env_min_values, self.env_max_values))]).permute(1,0,2,3)
+        out = torch.stack(
+            [F.hardtanh(y[:, i, :, :], min_val=min_value, max_val=max_value) for i, (min_value, max_value) in
+             enumerate(zip(self.env_min_values, self.env_max_values))]).permute(1, 0, 2, 3)
 
         return out
 

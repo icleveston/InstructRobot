@@ -5,7 +5,7 @@ from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 from .ActorCritic import ActorCritic
 from .Memory import Memory
 from torchvision import transforms
-from Main.Main import NormalizeInverse
+from Utils import NormalizeInverse
 
 
 class Agent:

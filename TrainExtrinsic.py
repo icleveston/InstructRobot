@@ -18,7 +18,7 @@ import multiprocessing
 from Utils import NormalizeInverse
 from Main.Agent.Extrinsic import Memory
 from Main.Agent.Extrinsic import Agent
-from Main.Environment.CubeSimpleExtEnv import CubeSimpleExtEnv
+from Main.Environment.CubeChangeTableExtEnv import CubeChangeTableExtEnv
 
 
 torch.set_printoptions(threshold=10_000)
@@ -35,7 +35,7 @@ class TrainExtrinsic():
         # Training params
         self.model_name = model_name
 
-        self.n_steps = 5E5
+        self.n_steps = 250000
         self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0
@@ -78,8 +78,9 @@ class TrainExtrinsic():
         print(f"\n[*] Device: {self.device}")
 
         # Build the environment
-        self.env = CubeSimpleExtEnv(
+        self.env = CubeChangeTableExtEnv(
             headless=headless,
+            num_styles=self.n_rollout,
             random_seed=self.random_seed
         )
 
@@ -117,7 +118,7 @@ class TrainExtrinsic():
                 for r in range(self.n_rollout):
 
                     # Get the first observation
-                    old_observation = self.env.reset()
+                    old_observation = self.env.reset(r)
 
                     for j in range(self.n_trajectory):
                         # Save observations

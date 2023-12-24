@@ -18,6 +18,7 @@ class Environment(ABC):
             self,
             name,
             scene_file,
+            num_styles,
             headless: bool = True,
             stack_obs: int = 3,
             random_seed: int = 1):
@@ -30,6 +31,7 @@ class Environment(ABC):
         self.env_std = None
         self.env_min_values = None
         self.env_max_values = None
+        self.num_styles = num_styles
 
         self.pr = PyRep()
         self.pr.launch(self._scene_file, headless=headless)
@@ -56,7 +58,7 @@ class Environment(ABC):
         return self._scene_file
 
     @abstractmethod
-    def configure(self):
+    def configure(self, id_rollout: int):
         pass
 
     @abstractmethod
@@ -67,7 +69,7 @@ class Environment(ABC):
     def observe(self):
         pass
 
-    def start(self, warm_up_steps=10):
+    def start(self, id_rollout: int, warm_up_steps=10):
 
         # Start simulation
         self.pr.start()
@@ -79,7 +81,7 @@ class Environment(ABC):
         self._obs.clear()
 
         # Configure init scene
-        self.configure()
+        self.configure(id_rollout)
 
         # Warm up simulator
         for i in range(warm_up_steps):
@@ -89,12 +91,12 @@ class Environment(ABC):
         for i in range(self._stack_obs):
             self._obs.append(self.observe())
 
-    def reset(self) -> list[Any]:
+    def reset(self, id_rollout: int) -> list[Any]:
 
         if self.pr.running:
             self.pr.stop()
 
-        self.start()
+        self.start(id_rollout)
 
         return [o for i, o in enumerate(self._obs) if i % 2 == 1]
 
@@ -146,9 +148,7 @@ class Environment(ABC):
         self.pr.stop()
         self.pr.shutdown()
 
-    def _compute_env_stat_metrics(self, width=128, height=64, n_observations_computation=500, is_gray: bool = False):
-
-        obs = self.reset()
+    def _compute_env_stat_metrics(self, width=128, height=64, n_observations_computation=100, is_gray: bool = False):
 
         # Add basic transformations
         transformations_array = [
@@ -162,31 +162,36 @@ class Environment(ABC):
         # Compose the transformations
         trans = transforms.Compose(transformations_array)
 
-        image_tensor = torch.empty((len(obs) * n_observations_computation, 1 if is_gray else 3, height*2, width),
-                                   dtype=torch.float)
+        obs = self.reset(0)
 
+        image_tensor = torch.empty(
+            (len(obs) * n_observations_computation * self.num_styles, 1 if is_gray else 3, height * 2, width),
+            dtype=torch.float)
         index = 0
 
-        for _ in range(n_observations_computation):
+        for id_rollout in range(self.num_styles):
+            obs = self.reset(id_rollout)
 
-            action = [random.randrange(-1, 1) for _ in range(26)]
+            for _ in range(n_observations_computation):
 
-            obs, _ = self.step(action)
+                action = [random.randrange(-1, 1) for _ in range(26)]
 
-            for o in obs:
-                image_top = o["frame_top"]
-                image_front = o["frame_front"]
+                obs, _ = self.step(action)
 
-                # Convert state to tensor
-                image_top_tensor = trans(image_top)
-                image_font_tensor = trans(image_front)
+                for o in obs:
+                    image_top = o["frame_top"]
+                    image_front = o["frame_front"]
 
-                # Cat all images into a single one
-                images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=1)
+                    # Convert state to tensor
+                    image_top_tensor = trans(image_top)
+                    image_font_tensor = trans(image_front)
 
-                image_tensor[index] = images_stacked
+                    # Cat all images into a single one
+                    images_stacked = torch.cat((image_top_tensor, image_font_tensor), dim=1)
 
-                index += 1
+                    image_tensor[index] = images_stacked
+
+                    index += 1
 
         mean_images, std_images = _online_mean_and_sd(image_tensor, is_gray)
 

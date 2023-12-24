@@ -16,7 +16,7 @@ from multiprocessing import Process, JoinableQueue
 from Utils import NormalizeInverse
 from Main.Agent.Intrinsic import Memory
 from Main.Agent.Intrinsic import Agent
-from Main.Environment.CubeSimpleIntEnv import CubeSimpleIntEnv
+from Main.Environment.CubeChangeTableIntEnv import CubeChangeTableIntEnv
 
 torch.set_printoptions(threshold=10_000)
 
@@ -25,7 +25,7 @@ torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=Fal
 
 class TrainIntrinsic():
 
-    def __init__(self, headless: bool = False, model_name: str = None, gpu: int = 0):
+    def __init__(self, headless: bool = True, model_name: str = None, gpu: int = 0):
 
         # Set the default cuda card
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
@@ -76,9 +76,10 @@ class TrainIntrinsic():
         print(f"\n[*] Device: {self.device}")
 
         # Build the environment
-        self.env = CubeSimpleIntEnv(
+        self.env = CubeChangeTableIntEnv(
             headless=headless,
-            random_seed=self.random_seed
+            num_styles=self.n_rollout,
+            random_seed=self.random_seed,
         )
 
         self.agent = Agent(
@@ -116,7 +117,7 @@ class TrainIntrinsic():
                 for r in range(self.n_rollout):
 
                     # Get the first observation
-                    old_observation = self.env.reset()
+                    old_observation = self.env.reset(r)
 
                     for j in range(self.n_trajectory):
                         # Save observations

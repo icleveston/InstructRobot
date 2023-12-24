@@ -16,7 +16,7 @@ from multiprocessing import Process, JoinableQueue
 from Utils import NormalizeInverse
 from Main.Agent.Extrinsic_task import Memory
 from Main.Agent.Extrinsic_task import Agent
-from Main.Environment.CubeSimpleExtEnv import CubeSimpleExtEnv
+from Main.Environment.CubeChangeTableExtEnv import CubeChangeTableExtEnv
 
 
 torch.set_printoptions(threshold=10_000)
@@ -76,8 +76,9 @@ class TrainTask():
         print(f"\n[*] Device: {self.device}")
 
         # Build the environment
-        self.env = CubeSimpleExtEnv(
+        self.env = CubeChangeTableExtEnv(
             headless=headless,
+            num_styles=self.n_rollout,
             random_seed=self.random_seed
         )
 
@@ -115,7 +116,7 @@ class TrainTask():
                 for r in range(self.n_rollout):
 
                     # Get the first observation
-                    old_observation = self.env.reset()
+                    old_observation = self.env.reset(r)
 
                     for j in range(self.n_trajectory):
                         # Save observations

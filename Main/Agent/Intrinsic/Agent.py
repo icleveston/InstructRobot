@@ -33,7 +33,9 @@ class Agent:
 
         self.critic_loss: nn.MSELoss = nn.MSELoss()
 
-        self.ssim_loss = SSIM(data_range=1, size_average=True, nonnegative_ssim=True)
+        #self.ssim_loss = SSIM(data_range=1, size_average=True, nonnegative_ssim=True)
+
+        self.ssim_loss: nn.MSELoss = nn.MSELoss()
 
         self.trans_inverse_rgb = transforms.Compose([
             NormalizeInverse(self.env.env_mean_rgb, self.env.env_std_rgb),
@@ -120,7 +122,7 @@ class Agent:
 
             pred_state = self.trans_inverse_rgb(pred_state)
 
-            loss_intrinsic = 1-self.ssim_loss(state_intrinsic, pred_state)
+            loss_intrinsic = self.ssim_loss(state_intrinsic, pred_state)
 
             loss = loss_actor + loss_entropy + loss_critic + loss_intrinsic
 

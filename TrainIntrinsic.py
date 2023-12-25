@@ -33,7 +33,7 @@ class TrainIntrinsic():
         # Training params
         self.model_name = model_name
 
-        self.n_steps = 5E5
+        self.n_steps = 3E6
         self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0

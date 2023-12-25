@@ -41,10 +41,7 @@ class ActorCritic(nn.Module):
         dist_entropy = dist.entropy()
 
         # Critic
-        x_vision_critic = self.critic_vision(state_vision)
-        x_proprioception_critic = self.critic_proprioception(state_proprioception)
-        x_critic = torch.cat((x_vision_critic, x_proprioception_critic), dim=1)
-        state_value = self.critic(x_critic)
+        state_value = self.critic(state_vision, state_proprioception)
 
         return action_logprobs, torch.squeeze(state_value), dist_entropy
 

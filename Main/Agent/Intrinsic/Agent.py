@@ -35,7 +35,7 @@ class Agent:
 
         #self.ssim_loss = SSIM(data_range=1, size_average=True, nonnegative_ssim=True)
 
-        self.ssim_loss: nn.MSELoss = nn.MSELoss()
+        self.intrinsic_loss: nn.MSELoss = nn.MSELoss(reduction='none')
 
         self.trans_inverse_rgb = transforms.Compose([
             NormalizeInverse(self.env.env_mean_rgb, self.env.env_std_rgb),
@@ -62,9 +62,11 @@ class Agent:
         return self.policy_old.next_state(state_vision, state_proprioception, action)
 
     def compute_intrinsic_reward(self, state, state_pred):
+        diff = (state_pred.flatten() - state.flatten()) ** 2
+        mse_error = torch.mean(diff)
+        intrinsic_reward = 1 - 1 / (1 + mse_error)
+        return intrinsic_reward.detach()
 
-        # Compute the loss
-        return 1-ssim(state, state_pred, data_range=1, size_average=True, nonnegative_ssim=True).detach()
 
     def update(self, memory: Memory):
 
@@ -122,7 +124,11 @@ class Agent:
 
             pred_state = self.trans_inverse_rgb(pred_state)
 
-            loss_intrinsic = self.ssim_loss(state_intrinsic, pred_state)
+            dim_batch = state_intrinsic.size(0)
+            loss_intrinsic = self.intrinsic_loss(state_intrinsic.reshape(dim_batch, -1),
+                                                 pred_state.reshape(dim_batch, -1))
+            loss_intrinsic = torch.mean(loss_intrinsic, dim=1)
+            loss_intrinsic = 10.0 * torch.mean(loss_intrinsic)
 
             loss = loss_actor + loss_entropy + loss_critic + loss_intrinsic
 

@@ -14,7 +14,7 @@ class ActorCritic(nn.Module):
 
         self.actor = Actor(action_dim)
         self.critic = Critic(action_dim)
-        self.intrinsic = Intrinsic2(env_min_values, env_max_values)
+        self.intrinsic = Intrinsic(env_min_values, env_max_values)
 
         self.action_var = torch.full((action_dim,), self.action_std).to(self.device)
 
@@ -148,8 +148,11 @@ class Critic(nn.Module):
 
 class Intrinsic(nn.Module):
 
-    def __init__(self):
+    def __init__(self, env_min_values, env_max_values):
         super().__init__()
+
+        self.env_min_values = env_min_values
+        self.env_max_values = env_max_values
 
         self.proprioception = nn.Linear(3 * 26, 512)
         self.action = nn.Linear(26, 512)
@@ -196,7 +199,11 @@ class Intrinsic(nn.Module):
         x = torch.cat([x, conv1], dim=1)
         x = self.dconv_up1(x)
 
-        out = self.conv_last(x)
+        y = self.conv_last(x)
+
+        out = torch.stack(
+            [F.hardtanh(y[:, i, :, :], min_val=min_value, max_val=max_value) for i, (min_value, max_value) in
+             enumerate(zip(self.env_min_values, self.env_max_values))]).permute(1, 0, 2, 3)
 
         return out
 

@@ -2,21 +2,26 @@ import argparse
 import random
 import torch
 from torchvision import transforms
+from prettytable import PrettyTable
 import os
 import time
-import numpy as np
+import numpy as nppip
 from PIL import Image, ImageFont, ImageDraw
 from tqdm import tqdm
 import shutil
 import wandb
 import multiprocessing
 from csv import writer
-from prettytable import PrettyTable
 from multiprocessing import Process, JoinableQueue
 from Utils import NormalizeInverse
 from Main.Agent.Intrinsic import Memory
 from Main.Agent.Intrinsic import Agent
-from Main.Environment.CubeSimpleIntEnv import CubeSimpleIntEnv
+import numpy as np
+from Main.Environment import Environment
+import re
+import warnings
+warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=Warning, message="early reset ignored")
 
 torch.set_printoptions(threshold=10_000)
 
@@ -32,13 +37,14 @@ class TrainIntrinsic():
 
         # Training params
         self.model_name = model_name
+        self.env_name = 'coinrun'
 
         self.n_steps = 3E6
-        self.n_rollout = 12
-        self.n_trajectory = 32
+        self.n_rollout = 8
+        self.n_trajectory = 100
         self.current_step = 0
         self.lr = 1e-4
-        self.action_dim = 26
+        self.action_dim = 15
         self.action_std = 0.5
         self.betas = (0.9, 0.999)
         self.gamma = 0.99
@@ -76,10 +82,8 @@ class TrainIntrinsic():
         print(f"\n[*] Device: {self.device}")
 
         # Build the environment
-        self.env = CubeSimpleIntEnv(
-            headless=headless,
-            random_seed=self.random_seed
-        )
+        self.env = Environment(name=self.env_name)
+
 
         self.agent = Agent(
             env=self.env,
@@ -93,7 +97,8 @@ class TrainIntrinsic():
             total_iters=self.n_steps // (self.n_rollout * self.n_trajectory),
             device=self.device
         )
-
+        self.env_name = remove_special_caracteres(self.env_name)
+        print(f"[*] Env name: {self.env_name}")
         # Build the agent's memory
         self.memory = Memory()
 
@@ -118,6 +123,8 @@ class TrainIntrinsic():
                     # Get the first observation
                     old_observation = self.env.reset()
 
+                    print(old_observation[0][0].shape)
+
                     for j in range(self.n_trajectory):
                         # Save observations
                         observations[r].append(old_observation.copy())
@@ -129,10 +136,11 @@ class TrainIntrinsic():
                         action, logprob = self.agent.select_action(state_flatten)
 
                         # Predict the next state
-                        state_pred = self.agent.predict_next_state(state_flatten, action)
+                        state_pred = self.agent.predict_next_state(state_flatten, action.flatten())
 
                         # Execute action in the simulator
-                        new_observation, ext_reward = self.env.step(action.squeeze().data.cpu().numpy())
+                        #new_observation, ext_reward = self.env.step(action.squeeze().data.cpu().numpy())
+                        new_observation, ext_reward, done, info = self.env.step(action.squeeze().data.cpu().numpy())
 
                         # Build new state from new observation
                         _, state_intrinsic = self._build_state_from_observations(new_observation)
@@ -151,7 +159,7 @@ class TrainIntrinsic():
                         self.memory.states_intrinsic.append(state_intrinsic)
                         self.memory.actions.append(action.squeeze())
                         self.memory.logprobs.append(logprob.squeeze())
-                        self.memory.is_terminals.append(j == self.n_trajectory - 1)
+                        self.memory.is_terminals.append(bin(int(done)))
 
                         # Append intrinsic frames
                         intrinsic_frames[r].append({"groundtruth": state_intrinsic, "prediction": state_pred})
@@ -194,33 +202,27 @@ class TrainIntrinsic():
 
     def _build_state_from_observations(self, old_observation):
 
-        image_tensor_rgb = torch.empty((len(old_observation), 3, 128, 128), dtype=torch.float, device=self.device)
-        proprioception_tensor = torch.empty((len(old_observation), 26), dtype=torch.float, device=self.device)
+        image_tensor_rgb = torch.empty((len(old_observation), 3, 64, 64), dtype=torch.float, device=self.device)
+        action_tensor = torch.empty((len(old_observation), 15), dtype=torch.float, device=self.device)
 
         for i, o in enumerate(old_observation):
-            image_top = o["frame_top"]
-            image_front = o["frame_front"]
+            image_game = o[0]
 
+            action = o[1]
             # Convert state to tensor
-            image_top_tensor_rgb = self.trans_rgb(image_top)
-            image_front_tensor_rgb = self.trans_rgb(image_front)
-
-            # Cat all images into a single one
-            images_stacked_rgb = torch.cat((image_top_tensor_rgb, image_front_tensor_rgb), dim=1)
-
-            image_tensor_rgb[i] = images_stacked_rgb
+            image_tensor_rgb[i] = self.trans_rgb(image_game)
 
             # Save the proprioception information
-            proprioception_tensor[i] = torch.as_tensor(o["proprioception"], device=self.device)
+            action_tensor[i] = torch.nn.functional.one_hot(torch.tensor(action), num_classes=15).to(self.device)
 
         state_vision_rgb = image_tensor_rgb.flatten(0, 1)
-        state_proprioception = proprioception_tensor.flatten(0, 1)
+        state_action = action_tensor.flatten(0, 1)
 
         # Get last observation
         state_intrinsic = image_tensor_rgb[-1].unsqueeze(0)
 
         # Build state
-        return (state_vision_rgb, state_proprioception), state_intrinsic
+        return (state_vision_rgb, state_action), state_intrinsic
 
     def _format_intrinsic_video(self, intrinsic_frames) -> np.array:
 
@@ -259,7 +261,7 @@ class TrainIntrinsic():
         if self.model_name is None:
             folder_time = time.strftime("%Y_%m_%d_%H_%M_%S")
 
-            self.model_name = f"{self.env}_{folder_time}"
+            self.model_name = f"{self.env_name}_{folder_time}"
 
             is_new_execution = True
 
@@ -283,7 +285,6 @@ class TrainIntrinsic():
         # Compose the transformations
         self.trans_rgb = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Resize((64, 128)),
             transforms.Normalize(self.env.env_mean_rgb, self.env.env_std_rgb)
         ])
 
@@ -298,7 +299,7 @@ class TrainIntrinsic():
         # Start wandb process
         self.process_wandb = Process(target=_save_wandb, args=(self.in_queues_wandb,
                                                                is_new_execution,
-                                                               str(self.env),
+                                                               self.env_name,
                                                                self.model_name,
                                                                self.info_path,
                                                                self.checkpoint_path))
@@ -473,23 +474,17 @@ def _save_csv(file_path: str, info: dict) -> None:
 def _format_video_wandb(last_obs_rollout) -> np.array:
     trans = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Resize((32, 64)),
         transforms.ToPILImage(),
     ])
 
     video = []
 
-    font = ImageFont.truetype("Main/Roboto/Roboto-Medium.ttf", size=10)
-
     for index, o in enumerate(last_obs_rollout):
 
-        image_array = np.concatenate((trans(o[-1]["frame_top"]), trans(o[-1]["frame_front"])), axis=0)
+        image_array = o[0][0]
+        print(image_array.shape)
 
         image = Image.fromarray(image_array, mode="RGB")
-
-        if "instruction" in o[-1].keys():
-            image_editable = ImageDraw.Draw(image)
-            image_editable.text((10, 115), o[-1]["instruction"], (0, 0, 0), align="center", font=font)
 
         video.append(np.asarray(image))
 
@@ -580,6 +575,11 @@ def _save_checkpoint(checkpoint_path: str, checkpoint: dict, is_best_checkpoint:
         # Copy the last checkpoint to the best checkpoint
         shutil.copyfile(ckpt_path, os.path.join(checkpoint_path, "best_checkpoint.pth"))
 
+
+def remove_special_caracteres(name: str) -> str:
+    # Use uma expressão regular para substituir caracteres especiais por underscores
+    txt_underline = re.sub(r'[-:]', '_', name)
+    return txt_underline
 
 def parse_arguments():
     arg = argparse.ArgumentParser()

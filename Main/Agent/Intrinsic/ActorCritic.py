@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from torch.distributions import MultivariateNormal
 from torch.autograd import Function
 
+from torch.distributions import Categorical
+
 
 class ActorCritic(nn.Module):
     def __init__(self, action_dim, action_std, env_min_values, env_max_values, device):
@@ -16,12 +18,12 @@ class ActorCritic(nn.Module):
         self.critic = Critic(action_dim)
         self.intrinsic = Intrinsic(env_min_values, env_max_values)
 
-        self.action_var = torch.full((action_dim,), self.action_std).to(self.device)
 
     def forward(self):
         raise NotImplementedError
 
     def next_state(self, state_vision, state_proprioception, action):
+        action = torch.nn.functional.one_hot(action, num_classes=15).float()
         state_pred = self.intrinsic(state_vision, state_proprioception, action)
 
         return state_pred.detach()
@@ -30,9 +32,8 @@ class ActorCritic(nn.Module):
 
         action_mean = self.actor(state_vision, state_proprioception)
 
-        cov_mat = torch.diag(self.action_var).to(self.device)
-
-        dist = MultivariateNormal(action_mean, cov_mat, validate_args=False)
+        probabilities = F.softmax(action_mean, dim=-1)
+        dist = Categorical(probabilities)
         action = dist.sample()
         action_logprob = dist.log_prob(action)
 
@@ -42,11 +43,8 @@ class ActorCritic(nn.Module):
 
         # Actor
         action_mean = self.actor(state_vision, state_proprioception)
-
-        action_var = self.action_var.expand_as(action_mean).to(self.device)
-        cov_mat = torch.diag_embed(action_var).to(self.device)
-
-        dist = MultivariateNormal(action_mean, cov_mat, validate_args=False)
+        probabilities = F.softmax(action_mean, dim=-1)
+        dist = Categorical(probabilities)
 
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
@@ -55,7 +53,8 @@ class ActorCritic(nn.Module):
         state_value = self.critic(state_vision, state_proprioception)
 
         # Intrinsic
-        state_pred = self.intrinsic(state_vision, state_proprioception, action)
+        action_one_hot = torch.nn.functional.one_hot(action, num_classes=15).float()
+        state_pred = self.intrinsic(state_vision, state_proprioception, action_one_hot)
 
         return action_logprobs, torch.squeeze(state_value), dist_entropy, state_pred
 
@@ -70,7 +69,7 @@ class ConvNet(nn.Module):
 
         self.maxpool = nn.MaxPool2d(2)
 
-        self.fc1 = nn.Linear(in_features=768, out_features=num_output)
+        self.fc1 = nn.Linear(in_features=192, out_features=num_output)
 
     def forward(self, x):
         conv1 = self.dconv_down1(x)
@@ -103,7 +102,7 @@ class Actor(nn.Module):
         super().__init__()
 
         self.actor_vision = ConvNet(9, 128)
-        self.actor_proprioception = nn.Linear(3 * 26, 128)
+        self.actor_proprioception = nn.Linear(3 * 15, 128)
 
         self.actor = nn.Sequential(
             nn.Tanh(),
@@ -154,8 +153,8 @@ class Intrinsic(nn.Module):
         self.env_min_values = env_min_values
         self.env_max_values = env_max_values
 
-        self.proprioception = nn.Linear(3 * 26, 512)
-        self.action = nn.Linear(26, 512)
+        self.proprioception = nn.Linear(3 * 15, 128)
+        self.action = nn.Linear(15, 128)
 
         self.dconv_down1 = double_conv(9, 32)
         self.dconv_down2 = double_conv(32, 64)
@@ -172,11 +171,12 @@ class Intrinsic(nn.Module):
 
     def forward(self, state_vision, state_proprioception, action):
         p = self.proprioception(state_proprioception)
+
         a = self.action(action)
 
         t = torch.stack((p, a), dim=1)
 
-        t = t.reshape(-1, 1, 32, 32)
+        t = t.reshape(-1, 1, 16, 16)
 
         conv1 = self.dconv_down1(state_vision)
         x = self.maxpool(conv1)

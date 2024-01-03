@@ -12,9 +12,9 @@ The experimental results are presented:
 
 <img src="results/touch_blue.gif" width="30%"> <img src="results/touch_green.gif" width="30%"> <img src="results/touch_red.gif" width="30%"> 
 
-## Instalation
+## Installation
 
-We recommend the instalation of Conda and creating an environment as:
+We recommend the installation of Conda and creating an environment as:
 
 ```bash
 conda env create -f environment.yml

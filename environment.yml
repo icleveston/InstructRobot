@@ -1,4 +1,4 @@
-name: phd
+name: InstructRobot
 channels:
   - defaults
 dependencies:

@@ -10,21 +10,35 @@ The ability to communicate with robots using natural language is a significant s
 
 The experimental results are presented:
 
-<img src="results/touch_blue.gif" width="20%"> <img src="results/touch_green.gif" width="20%"> <img src="results/touch_red.gif" width="20%"> 
+<img src="results/touch_blue.gif" width="33%"> <img src="results/touch_green.gif" width="33%"> <img src="results/touch_red.gif" width="33%"> 
 
 ## Instalation
 
-InstructRobot requires Python 3.8, PyTorch 1.3.1, Cuda 12.2, and Coppelia Simulator v4.2.
+We recommend the instalation of Conda and creating an environment as:
 
 ```bash
-git clone
-pip install -r requirements.txt
+conda env create -f environment.yml
+```
+Then, install Ubuntu's libraries so the Coppelia Simulator could work:
+
+```bash
 sudo apt-get install '^libxcb.*-dev' libx11-xcb-dev libglu1-mesa-dev libxrender-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev
 ```
 
-## Usage
+Also, InstructRobot requires: 
+- Python 3.11.4
+- PyTorch 1.3.1
+- Cuda 12.2
+- PyRep (https://github.com/stepjam/PyRep)
+- Coppelia Simulator v4.2.
 
-To train a new model:
+## Usage
+To train a new model, execute:
+```bash
+python3 Main.py
+```
+
+If you do not have screen, install the `xvfb-run` lib and execute:
 ```bash
 nohup xvfb-run --auto-servernum --server-num=1 -s "-screen 0 1024x768x24" python3 Main.py &
 ```

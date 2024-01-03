@@ -10,7 +10,7 @@ The ability to communicate with robots using natural language is a significant s
 
 The experimental results are presented:
 
-<img src="results/trajectory.png" width="20%"> 
+<img src="results/touch_blue.gif" width="20%"> <img src="results/touch_green.gif" width="20%"> <img src="results/touch_red.gif" width="20%"> 
 
 ## Instalation
 

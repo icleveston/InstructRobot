@@ -9,7 +9,7 @@ class CubeSimpleExtEnv(Environment):
 
     def __init__(self, **kwargs):
 
-        scene_file = 'Main/Scenes/Cubes_Simple_Task.ttt'
+        scene_file = 'Main/Scenes/Cubes_Simple_Task_Bowl.ttt'
 
 
 

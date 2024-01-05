@@ -18,17 +18,21 @@ class CubeSimpleExtEnv(Environment):
         self.cube_blue: Shape | None = None
 
         # Initialize parent class
-        super().__init__("CubeExtLift", scene_file, **kwargs)
+        super().__init__("CubeExtDrag", scene_file, **kwargs)
 
 
     def configure(self) -> None:
         pass
 
     def reward(self):
-        if self._touch_green_cube() >= 1 and self.cube_green.get_position()[2] >= 0.58:
-            r = 1.0
-        else:
-            r = 0.0
+        self._load_objects()
+        r = 0.0
+        if ((self.cube_red.get_position()[0] <= 0.2250 and self.cube_red.get_position()[0] >= 0.1) and (self.cube_red.get_position()[1] <= 0.5 and self.cube_red.get_position()[1] >= 0.1)):
+            r += 1.0
+        elif ((self.cube_green.get_position()[0] <= 0.2250 and self.cube_green.get_position()[0] >= 0.1) and (self.cube_green.get_position()[1] <= 0.5 and self.cube_green.get_position()[1] >= 0.1)):
+            r += 1.0
+        elif ((self.cube_red.get_position()[0] <= 0.2250 and self.cube_red.get_position()[0] >= 0.1) and (self.cube_red.get_position()[1] <= 0.5 and self.cube_red.get_position()[1] >= 0.1)):
+            r += 1.0
         return r
 
     def observe(self):

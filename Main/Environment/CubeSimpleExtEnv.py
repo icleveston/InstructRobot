@@ -29,9 +29,9 @@ class CubeSimpleExtEnv(Environment):
         r = 0.0
         if ((self.cube_red.get_position()[0] <= 0.2250 and self.cube_red.get_position()[0] >= 0.1) and (self.cube_red.get_position()[1] <= 0.5 and self.cube_red.get_position()[1] >= 0.1)):
             r += 1.0
-        elif ((self.cube_green.get_position()[0] <= 0.2250 and self.cube_green.get_position()[0] >= 0.1) and (self.cube_green.get_position()[1] <= 0.5 and self.cube_green.get_position()[1] >= 0.1)):
+        if ((self.cube_green.get_position()[0] <= 0.2250 and self.cube_green.get_position()[0] >= 0.1) and (self.cube_green.get_position()[1] <= 0.5 and self.cube_green.get_position()[1] >= 0.1)):
             r += 1.0
-        elif ((self.cube_red.get_position()[0] <= 0.2250 and self.cube_red.get_position()[0] >= 0.1) and (self.cube_red.get_position()[1] <= 0.5 and self.cube_red.get_position()[1] >= 0.1)):
+        if ((self.cube_red.get_position()[0] <= 0.2250 and self.cube_red.get_position()[0] >= 0.1) and (self.cube_red.get_position()[1] <= 0.5 and self.cube_red.get_position()[1] >= 0.1)):
             r += 1.0
         return r
 

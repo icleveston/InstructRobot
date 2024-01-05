@@ -1,5 +1,5 @@
 import random
-
+import math
 from .Environment import Environment
 from pyrep.backend import sim
 from pyrep.objects.shape import Shape
@@ -18,7 +18,7 @@ class CubeSimpleExtEnv(Environment):
         self.cube_blue: Shape | None = None
 
         # Initialize parent class
-        super().__init__("CubeExtDrag", scene_file, **kwargs)
+        super().__init__("CubePutDrag", scene_file, **kwargs)
 
 
     def configure(self) -> None:
@@ -27,13 +27,24 @@ class CubeSimpleExtEnv(Environment):
     def reward(self):
         self._load_objects()
         r = 0.0
-        if ((self.cube_red.get_position()[0] <= 0.2250 and self.cube_red.get_position()[0] >= 0.1) and (self.cube_red.get_position()[1] <= 0.5 and self.cube_red.get_position()[1] >= 0.1)):
+        ratio = 0.15
+        center = [0.1, 0.0]
+        distance = math.sqrt((self.cube_green.get_position()[0] - center[0]) ** 2 + (self.cube_green.get_position()[1] - center[1]) ** 2)
+        if (distance < ratio):
             r += 1.0
-        if ((self.cube_green.get_position()[0] <= 0.2250 and self.cube_green.get_position()[0] >= 0.1) and (self.cube_green.get_position()[1] <= 0.5 and self.cube_green.get_position()[1] >= 0.1)):
+
+        distance = math.sqrt(
+            (self.cube_red.get_position()[0] - center[0]) ** 2 + (self.cube_red.get_position()[1] - center[1]) ** 2)
+        if (distance < ratio):
             r += 1.0
-        if ((self.cube_red.get_position()[0] <= 0.2250 and self.cube_red.get_position()[0] >= 0.1) and (self.cube_red.get_position()[1] <= 0.5 and self.cube_red.get_position()[1] >= 0.1)):
+
+        distance = math.sqrt(
+            (self.cube_blue.get_position()[0] - center[0]) ** 2 + (self.cube_blue.get_position()[1] - center[1]) ** 2)
+        if (distance < ratio):
             r += 1.0
+
         return r
+
 
     def observe(self):
 

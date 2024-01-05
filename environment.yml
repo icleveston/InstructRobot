@@ -82,7 +82,9 @@ dependencies:
       - pyparsing==3.0.9
       - pyqt6-qt6==6.4.2
       - pyqt6-sip==13.4.1
+      - pyrep==4.1.0.3
       - python-dateutil==2.8.2
+      - pytorch-msssim==1.0.0
       - pytz==2023.3
       - pywavelets==1.4.1
       - pyyaml==6.0

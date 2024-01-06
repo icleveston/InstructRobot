@@ -18,7 +18,7 @@ class CubeSimpleExtEnv(Environment):
         self.cube_blue: Shape | None = None
 
         # Initialize parent class
-        super().__init__("CubePutDrag", scene_file, **kwargs)
+        super().__init__("CubeExtPutDrag", scene_file, **kwargs)
 
 
     def configure(self) -> None:

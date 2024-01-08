@@ -17,8 +17,8 @@ class CubeSimpleExtEnv(Environment):
         num_positions = 50
 
 
-        x_pos = np.round(np.random.uniform(low=-0.14, high=0.14, size=num_positions),2)
-        y_pos = np.round(np.random.uniform(low=-0.4, high=0.4, size=num_positions),2)
+        x_pos = np.round(np.random.uniform(low=-0.2, high=0.2, size=num_positions),2)
+        y_pos = np.round(np.random.uniform(low=-0.2, high=0.2, size=num_positions),2)
 
         self.positions = np.column_stack((x_pos, y_pos))
 

@@ -15,6 +15,7 @@ class CubeSimpleExtEnv(Environment):
         self.cube_blue: Shape | None = None
 
         num_positions = 50
+
         x_pos = np.round(np.random.uniform(low=-0.2, high=0.2, size=num_positions),2)
         y_pos = np.round(np.random.uniform(low=-0.2, high=0.2, size=num_positions),2)
 

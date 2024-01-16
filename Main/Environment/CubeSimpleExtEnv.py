@@ -33,7 +33,6 @@ class CubeSimpleExtEnv(Environment):
 
         self.masses = [0.5, 1.0, 1.5] * num_positions
 
-
         # Initialize parent class
         super().__init__("CubeExtTouch(GenPosition_&_Color_&_Mass)", scene_file, **kwargs)
 

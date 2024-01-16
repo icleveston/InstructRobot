@@ -1,3 +1,3 @@
 import subprocess
 
-subprocess.run(["xvfb-run python3 TrainIntrinsic.py"], shell=True)
+subprocess.run(["xvfb-run python3 TrainExtrinsic.py"], shell=True)

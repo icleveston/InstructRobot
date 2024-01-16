@@ -37,8 +37,6 @@ class CubeSimpleExtEnv(Environment):
 
     def configure(self) -> None:
         self._load_objects()
-        print(self.cube.get_size())
-        exit()
         ind = np.random.randint(len(self.positions))
         pos = np.round(self.positions[ind], 2)
         color = list(self.rgb_colors[ind])

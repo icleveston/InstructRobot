@@ -12,7 +12,8 @@ class CubeSimpleExtEnv(Environment):
 
         scene_file = 'Main/Scenes/Cubes_Simple_Task_One_Cube.ttt'
 
-        self.cube: Shape | None = None
+        self.object: Shape | None = None
+        self.object_2: Shape | None = None
 
         num_positions = 50
 
@@ -46,9 +47,9 @@ class CubeSimpleExtEnv(Environment):
         pos = np.round(self.positions[ind], 2)
         color = list(self.rgb_colors[ind])
         mass = self.masses[ind]
-        self.cube.set_position([pos[0], pos[1], 0.5345])
-        self.cube.set_color(color)
-        self.cube.set_mass(mass)
+        self.object.set_position([pos[0], pos[1], 0.5345])
+        self.object.set_color(color)
+        self.object.set_mass(mass)
 
     def reward(self):
         self._load_objects()
@@ -76,14 +77,15 @@ class CubeSimpleExtEnv(Environment):
     def _load_objects(self) -> None:
 
         # Load objects shapes from handles
-        if self.cube is None:
-            self.cube = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Blue"))
-
+        if self.object is None:
+            self.object = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Blue"))
+        self.object_2 = Shape.create(type=Shape.SHAPE_SPHERE, color=[1.0, 0.0, 0.0])
+        self.object_2.set_position([0.2, 0.2, 0.2])
     def _get_collisions(self):
 
         self._load_objects()
 
-        n_collision_blue, _ = self.NAO.check_collisions(self.cube)
+        n_collision_blue, _ = self.NAO.check_collisions(self.object)
 
 
         return n_collision_blue

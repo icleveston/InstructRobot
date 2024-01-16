@@ -32,13 +32,13 @@ class CubeSimpleExtEnv(Environment):
         np.save('rgb_colors.npy', self.rgb_colors)
 
         # Initialize parent class
-        super().__init__("CubeExtTouch(GenPosition_&_Color)", scene_file, **kwargs)
+        super().__init__("CubeExtTouch(GenPosition_&_Color_&_Mass)", scene_file, **kwargs)
 
 
     def configure(self) -> None:
         self._load_objects()
-        print(self.cube.get_mass())
-        exit()
+        print(f'mass:{self.cube.get_mass()}')
+
         ind = np.random.randint(len(self.positions))
         pos = np.round(self.positions[ind], 2)
         color = list(self.rgb_colors[ind])

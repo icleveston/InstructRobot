@@ -37,7 +37,7 @@ class CubeSimpleExtEnv(Environment):
 
         np.save('masses.npy', self.masses)
         # Initialize parent class
-        super().__init__("CubeExtTouch(GenPosition_&_Color_&_Mass)", scene_file, **kwargs)
+        super().__init__("CubeExtTouch(GenPosition_&_Color_&_Mass_&_Form)", scene_file, **kwargs)
 
 
     def configure(self) -> None:
@@ -80,7 +80,7 @@ class CubeSimpleExtEnv(Environment):
         if self.object is None:
             self.object = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Blue"))
         self.object_2 = Shape.create(type=pyrep.const.PrimitiveShape.SPHERE, color=[1.0, 0.0, 0.0], size=[0.5, 0.5, 0.5])
-        self.object_2.set_position([0.2, 0.2, 0.2])
+        self.object_2.set_position([0.2, 0.2, 0.54])
     def _get_collisions(self):
 
         self._load_objects()

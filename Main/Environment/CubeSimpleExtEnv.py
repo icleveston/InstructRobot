@@ -79,7 +79,7 @@ class CubeSimpleExtEnv(Environment):
         # Load objects shapes from handles
         if self.object is None:
             self.object = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Blue"))
-        self.object_2 = Shape.create(type=pyrep.const.PrimitiveShape.SPHERE, color=[1.0, 0.0, 0.0])
+        self.object_2 = Shape.create(type=pyrep.const.PrimitiveShape.SPHERE, color=[1.0, 0.0, 0.0], size=[0.5, 0.5, 0.5])
         self.object_2.set_position([0.2, 0.2, 0.2])
     def _get_collisions(self):
 

@@ -13,7 +13,9 @@ class CubeSimpleExtEnv(Environment):
         scene_file = 'Main/Scenes/Cubes_Simple_Task_One_Cube.ttt'
 
         self.object: Shape | None = None
-        self.object_2: Shape | None = None
+        self.object = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Blue"))
+        self.object.remove()
+
 
         num_positions = 50
 
@@ -77,9 +79,7 @@ class CubeSimpleExtEnv(Environment):
     def _load_objects(self) -> None:
 
         # Load objects shapes from handles
-        if self.object is None:
-            self.object = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Blue"))
-        self.object_2 = Shape.create(type=pyrep.const.PrimitiveShape.SPHERE, color=[1.0, 0.0, 0.0], size=[0.5, 0.5, 0.5])
+        self.object_2 = Shape.create(type=pyrep.const.PrimitiveShape.SPHERE, color=[1.0, 0.0, 0.0], size=[0.1, 0.1, 0.1])
         self.object_2.set_position([0.2, 0.2, 0.54])
     def _get_collisions(self):
 

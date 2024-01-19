@@ -33,7 +33,7 @@ class TrainTask():
         self.model_name = model_name
         self.model_intrinsic = model_intrinsic
 
-        self.n_steps = 230_000
+        self.n_steps = 500_000
         self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0
@@ -207,12 +207,12 @@ class TrainTask():
             self.info_path = os.path.join(self.output_path, 'info')
             self._load_checkpoint(load_best_checkpoint=False)
 
-        actor_train = ['actor.3.weight', 'actor.3.bias']
-        for name, param in self.agent.policy.actor.named_parameters():
-            param.requires_grad = True if name in actor_train else False
-        critic_train = ['critic.3.weight', 'critic.3.bias']
-        for name, param in self.agent.policy.critic.named_parameters():
-            param.requires_grad = True if name in critic_train else False
+        #actor_train = ['actor.3.weight', 'actor.3.bias']
+        #for name, param in self.agent.policy.actor.named_parameters():
+        #    param.requires_grad = True if name in actor_train else False
+        #critic_train = ['critic.3.weight', 'critic.3.bias']
+        #for name, param in self.agent.policy.critic.named_parameters():
+        #    param.requires_grad = True if name in critic_train else False
 
 
         # Compose the transformations

@@ -62,13 +62,19 @@ class TrainIntrinsic():
         # Set the seed
         torch.manual_seed(self.random_seed)
         random.seed(self.random_seed)
+        np.random.seed(self.random_seed)
+
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        os.environ['PYTHONHASHSEED'] = str(self.random_seed)
+
 
         # Check if the gpu is available
         if torch.cuda.is_available():
 
             self.device = torch.device("cuda")
 
-            torch.cuda.manual_seed(self.random_seed)
+            torch.cuda.manual_seed_all(self.random_seed)
 
         else:
             self.device = torch.device("cpu")

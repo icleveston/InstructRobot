@@ -59,9 +59,15 @@ class TrainTask():
         self.trans_rgb = None
         self.trans_inverse_rgb = None
 
+
         # Set the seed
         torch.manual_seed(self.random_seed)
         random.seed(self.random_seed)
+        np.random.seed(self.random_seed)
+
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        os.environ['PYTHONHASHSEED'] = str(self.random_seed)
 
         # Check if the gpu is available
         if torch.cuda.is_available():

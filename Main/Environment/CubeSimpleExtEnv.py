@@ -62,7 +62,7 @@ class CubeSimpleExtEnv(Environment):
                                        size=[0.08, 0.08, 0.08])
         elif form==2:
             self.object = Shape.create(type=pyrep.const.PrimitiveShape.CYLINDER, color=color,
-                                       size=[0.08, 0.08, 0.08])
+                                       size=[0.08, 0.08, 0.12])
 
         self.object.set_position([pos[0], pos[1], 0.5345])
         self.object.set_mass(mass)

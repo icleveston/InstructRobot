@@ -1,5 +1,5 @@
 import random
-
+import math
 from .Environment import Environment
 from pyrep.backend import sim
 from pyrep.objects.shape import Shape
@@ -18,17 +18,24 @@ class CubeSimpleExtEnv(Environment):
         self.cube_blue: Shape | None = None
 
         # Initialize parent class
-        super().__init__("CubeExtLift", scene_file, **kwargs)
+        super().__init__("CubeExtStack", scene_file, **kwargs)
 
 
     def configure(self) -> None:
         pass
 
     def reward(self):
-        if self._touch_green_cube() >= 1 and self.cube_green.get_position()[2] >= 0.58:
-            r = 1.0
-        else:
-            r = 0.0
+        self._load_objects()
+
+        stack_green_red = abs(self.cube_green.get_position()[0] - self.cube_red.get_position()[0]) < 0.08 and abs(self.cube_green.get_position()[1] - self.cube_red.get_position()[1]) < 0.08
+        stack_green_blue = abs(self.cube_green.get_position()[0] - self.cube_blue.get_position()[0]) < 0.08 and abs(self.cube_green.get_position()[1] - self.cube_blue.get_position()[1]) < 0.08
+        stack_red_blue = abs(self.cube_red.get_position()[0] - self.cube_blue.get_position()[0]) < 0.08 and abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.08
+
+        r = 0.0
+        if stack_green_red and stack_green_blue and stack_red_blue:
+            r = 3.0
+        elif stack_green_red or stack_green_blue or stack_red_blue:
+            r = 2.0
         return r
 
     def observe(self):

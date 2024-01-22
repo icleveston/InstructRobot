@@ -1,6 +1,7 @@
 import random
 import math
 import numpy as np
+from typing import List, Any
 from .Environment import Environment
 from pyrep.backend import sim
 from pyrep.objects.shape import Shape
@@ -10,7 +11,7 @@ class CubeSimpleExtEnv(Environment):
 
     def __init__(self, **kwargs):
 
-        scene_file = 'Main/Scenes/Cubes_Simple_Task_One_Cube.ttt'
+        scene_file = 'Main/Scenes/Cubes_Simple_Clean.ttt'
 
         self.object: Shape | None = None
 
@@ -35,26 +36,46 @@ class CubeSimpleExtEnv(Environment):
 
         self.masses = [0.5, 1.0, 1.5] * num_positions
         np.random.shuffle(self.masses)
-
         np.save('masses.npy', self.masses)
+
+        self.types_obj = [0, 1, 2] * num_positions
+        np.random.shuffle(self.types_obj)
+        np.save('types_obj.npy', self.types_obj)
+
         # Initialize parent class
         super().__init__("CubeExtTouch(GenPosition_&_Color_&_Mass_&_Form)", scene_file, **kwargs)
 
 
     def configure(self) -> None:
-        self._load_objects()
 
         ind = np.random.randint(len(self.positions))
         pos = np.round(self.positions[ind], 2)
         color = list(self.rgb_colors[ind])
         mass = self.masses[ind]
+        form = self.types_obj[ind]
+
+        if form==0:
+            self.object = Shape.create(type=pyrep.const.PrimitiveShape.SPHERE, color=color,
+                                   size=[0.08, 0.08, 0.08])
+        elif form==1:
+            self.object = Shape.create(type=pyrep.const.PrimitiveShape.CUBOID, color=color,
+                                       size=[0.08, 0.08, 0.08])
+        elif form==2:
+            self.object = Shape.create(type=pyrep.const.PrimitiveShape.CYLINDER, color=color,
+                                       size=[0.08, 0.08, 0.08])
+
         self.object.set_position([pos[0], pos[1], 0.5345])
-        self.object.set_color(color)
         self.object.set_mass(mass)
+        self.object.set_name("new_object")
+
+    def _load_objects(self) -> None:
+
+        # Load objects shapes from handles
+        if self.object is None:
+            self.object = Shape(name_or_handle=sim.simGetObjectHandle("new_object"))
 
     def reward(self):
-        self._load_objects()
-        return self._touch_cube()
+        return self._touch_object()
 
 
     def observe(self):
@@ -75,25 +96,29 @@ class CubeSimpleExtEnv(Environment):
         return observation
 
 
-    def _load_objects(self) -> None:
-        self.object = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Blue"))
-        self.object.remove()
-        # Load objects shapes from handles
-        self.object_2 = Shape.create(type=pyrep.const.PrimitiveShape.SPHERE, color=[1.0, 0.0, 0.0], size=[0.1, 0.1, 0.1])
-        self.object_2.set_position([0.2, 0.2, 0.54])
     def _get_collisions(self):
 
         self._load_objects()
 
-        n_collision_blue, _ = self.NAO.check_collisions(self.object)
+        n_collision_object, _ = self.NAO.check_collisions(self.object)
 
 
-        return n_collision_blue
+        return n_collision_object
 
 
-    def _touch_cube(self):
+    def _touch_object(self):
 
         n_collision = self._get_collisions()
 
         return n_collision
 
+
+    def reset(self) -> list[Any]:
+        if self.object is not None:
+            self.object.remove()
+        if self.pr.running:
+            self.pr.stop()
+
+        self.start()
+
+        return [o for i, o in enumerate(self._obs) if i % 2 == 1]

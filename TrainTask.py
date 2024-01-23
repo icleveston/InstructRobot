@@ -18,7 +18,9 @@ from Main.Agent.Extrinsic_task import Memory
 from Main.Agent.Extrinsic_task import Agent
 from Main.Environment.CubeSimpleExtEnv import CubeSimpleExtEnv
 
+import warnings
 
+warnings.filterwarnings('ignore')
 torch.set_printoptions(threshold=10_000)
 
 torch.set_printoptions(profile="full", precision=10, linewidth=100, sci_mode=False)

@@ -210,6 +210,7 @@ class TrainTask():
             self._load_checkpoint(load_best_checkpoint=False)
 
 
+
         # Compose the transformations
         self.trans_rgb = transforms.Compose([
             transforms.ToTensor(),

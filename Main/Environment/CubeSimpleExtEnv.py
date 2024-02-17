@@ -32,10 +32,19 @@ class CubeSimpleExtEnv(Environment):
         stack_red_blue = abs(self.cube_red.get_position()[0] - self.cube_blue.get_position()[0]) < 0.08 and abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.08
 
         r = 0.0
-        if stack_green_red and stack_green_blue and stack_red_blue:
-            r = 3.0
-        elif stack_green_red or stack_green_blue or stack_red_blue:
-            r = 2.0
+        if stack_green_red and ((self.cube_green.get_position()[2] <= 0.5360 and self.cube_red.get_position()[2] > 0.5360) or (self.cube_green.get_position()[2] > 0.5360 and self.cube_red.get_position()[2] <= 0.5360)):
+            r += 1.0
+            if stack_red_blue or stack_green_blue:
+                r += 1.0
+        elif stack_green_blue and ((self.cube_green.get_position()[2] <= 0.5360 and self.cube_blue.get_position()[2] > 0.5360) or (self.cube_green.get_position()[2] > 0.5360 and self.cube_blue.get_position()[2] <= 0.5360)):
+            r += 1.0
+            if stack_red_blue or stack_green_red:
+                r += 1.0
+        elif stack_red_blue and ((self.cube_red.get_position()[2] <= 0.5360 and self.cube_blue.get_position()[2] > 0.5360) or (self.cube_red.get_position()[2] > 0.5360 and self.cube_blue.get_position()[2] <= 0.5360)):
+            r += 1.0
+            if stack_green_red or stack_green_blue:
+                r += 1.0
+
         return r
 
     def observe(self):

@@ -35,7 +35,7 @@ class TrainExtrinsic():
         # Training params
         self.model_name = model_name
 
-        self.n_steps = 3_500_000
+        self.n_steps = 4_000_000
         self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0

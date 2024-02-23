@@ -33,10 +33,9 @@ class CubeSimpleExtEnv(Environment):
                            abs(self.cube_green.get_position()[1] - self.cube_blue.get_position()[1]) < 0.07)
         dist_red_blue = (abs(self.cube_red.get_position()[0] - self.cube_blue.get_position()[0]) < 0.07 and
                          abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.07)
-        dist_three_cubes = (abs(self.cube_green.get_position()[0] - self.cube_red.get_position()[0]) < 0.07 and
-        abs(self.cube_green.get_position()[1] - self.cube_red.get_position()[1]) < 0.07) and
+        dist_three_cubes = ((abs(self.cube_green.get_position()[0] - self.cube_red.get_position()[0]) < 0.07 and abs(self.cube_green.get_position()[1] - self.cube_red.get_position()[1]) < 0.07) and
         (abs(self.cube_red.get_position()[0] - self.cube_blue.get_position()[0]) < 0.07 and
-         abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.07)
+         abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.07))
 
         stack_green_red = dist_green_red and ((self.cube_green.get_position()[2] == 0.5345 and self.cube_red.get_position()[2] > 0.5360) or (self.cube_green.get_position()[2] > 0.5360 and self.cube_red.get_position()[2] == 0.5345))
         stack_green_blue = dist_green_blue and ((self.cube_green.get_position()[2] == 0.5345 and self.cube_blue.get_position()[2] > 0.5360) or (self.cube_green.get_position()[2] > 0.5360 and self.cube_blue.get_position()[2] == 0.5345))

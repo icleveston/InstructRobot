@@ -57,19 +57,19 @@ class CubeSimpleExtEnv(Environment):
         elif stack_red_blue:
             r += 1.0
         elif stack_green_red_blue:
-            r += 1.0
+            r += 2.0
         elif stack_green_blue_red:
-            r += 1.0
+            r += 2.0
         elif stack_blue_green_red:
-            r += 1.0
+            r += 2.0
         elif stack_blue_red_green:
-            r += 1.0
+            r += 2.0
         elif stack_blue_red_green:
-            r += 1.0
+            r += 2.0
         elif stack_red_green_blue:
-            r += 1.0
+            r += 2.0
         elif stack_red_blue_green:
-            r += 1.0
+            r += 2.0
 
         return r
 

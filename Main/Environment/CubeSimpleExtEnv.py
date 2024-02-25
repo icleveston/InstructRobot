@@ -35,7 +35,8 @@ class CubeSimpleExtEnv(Environment):
         largura = max_x - min_x
         altura = max_y - min_y
         profundidade = max_z - min_z
-
+        print(largura)
+        print(altura)
         print(profundidade)
 
         ''' 

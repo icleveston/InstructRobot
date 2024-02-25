@@ -28,17 +28,15 @@ class CubeSimpleExtEnv(Environment):
         self._load_objects()
 
         # Obtenha as dimensões do objeto
-        dimensoes = self.cube_green.get_bounding_box()
+        dimensions = self.cube_green.get_bounding_box()
 
         # As dimensões serão retornadas como uma tupla (min_x, min_y, min_z, max_x, max_y, max_z)
-        min_x, min_y, min_z, max_x, max_y, max_z = dimensoes
-        largura = max_x - min_x
-        altura = max_y - min_y
-        profundidade = max_z - min_z
-        print(largura)
-        print(altura)
-        print(profundidade)
+        min_x, max_x, min_y, max_y, min_z, max_z = dimensions
+        width = max_x - min_x #largura
+        height = max_y - min_y #altura
+        depth = max_z - min_z #profundidade
 
+        print(width, height, depth)
         ''' 
         dist_green_red = (abs(self.cube_green.get_position()[0] - self.cube_red.get_position()[0]) < 0.08 and
                           abs(self.cube_green.get_position()[1] - self.cube_red.get_position()[1]) < 0.08)

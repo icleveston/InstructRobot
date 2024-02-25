@@ -27,15 +27,27 @@ class CubeSimpleExtEnv(Environment):
     def reward(self):
         self._load_objects()
 
-        dist_green_red = (abs(self.cube_green.get_position()[0] - self.cube_red.get_position()[0]) < 0.07 and
-                          abs(self.cube_green.get_position()[1] - self.cube_red.get_position()[1]) < 0.07)
-        dist_green_blue = (abs(self.cube_green.get_position()[0] - self.cube_blue.get_position()[0]) < 0.07 and
-                           abs(self.cube_green.get_position()[1] - self.cube_blue.get_position()[1]) < 0.07)
-        dist_red_blue = (abs(self.cube_red.get_position()[0] - self.cube_blue.get_position()[0]) < 0.07 and
-                         abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.07)
-        dist_three_cubes = ((abs(self.cube_green.get_position()[0] - self.cube_red.get_position()[0]) < 0.07 and abs(self.cube_green.get_position()[1] - self.cube_red.get_position()[1]) < 0.07) and
-        (abs(self.cube_red.get_position()[0] - self.cube_blue.get_position()[0]) < 0.07 and
-         abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.07))
+        # Obtenha as dimensões do objeto
+        dimensoes = self.cube_green.get_bounding_box()
+
+        # As dimensões serão retornadas como uma tupla (min_x, min_y, min_z, max_x, max_y, max_z)
+        min_x, min_y, min_z, max_x, max_y, max_z = dimensoes
+        largura = max_x - min_x
+        altura = max_y - min_y
+        profundidade = max_z - min_z
+
+        print(profundidade)
+
+        ''' 
+        dist_green_red = (abs(self.cube_green.get_position()[0] - self.cube_red.get_position()[0]) < 0.08 and
+                          abs(self.cube_green.get_position()[1] - self.cube_red.get_position()[1]) < 0.08)
+        dist_green_blue = (abs(self.cube_green.get_position()[0] - self.cube_blue.get_position()[0]) < 0.08 and
+                           abs(self.cube_green.get_position()[1] - self.cube_blue.get_position()[1]) < 0.08)
+        dist_red_blue = (abs(self.cube_red.get_position()[0] - self.cube_blue.get_position()[0]) < 0.08 and
+                         abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.08)
+        dist_three_cubes = ((abs(self.cube_green.get_position()[0] - self.cube_red.get_position()[0]) < 0.08 and abs(self.cube_green.get_position()[1] - self.cube_red.get_position()[1]) < 0.08) and
+        (abs(self.cube_red.get_position()[0] - self.cube_blue.get_position()[0]) < 0.08 and
+         abs(self.cube_red.get_position()[1] - self.cube_blue.get_position()[1]) < 0.08))
 
         stack_green_red = dist_green_red and ((self.cube_green.get_position()[2] == 0.5345 and self.cube_red.get_position()[2] > 0.5360) or (self.cube_green.get_position()[2] > 0.5360 and self.cube_red.get_position()[2] == 0.5345))
         stack_green_blue = dist_green_blue and ((self.cube_green.get_position()[2] == 0.5345 and self.cube_blue.get_position()[2] > 0.5360) or (self.cube_green.get_position()[2] > 0.5360 and self.cube_blue.get_position()[2] == 0.5345))
@@ -47,6 +59,7 @@ class CubeSimpleExtEnv(Environment):
         stack_blue_red_green = dist_three_cubes and (self.cube_blue.get_position()[2] == 0.5345 and self.cube_red.get_position()[2] > self.cube_blue.get_position()[2] and self.cube_green.get_position()[2] > self.cube_red.get_position()[2])
         stack_red_green_blue = dist_three_cubes and (self.cube_red.get_position()[2] == 0.5345 and self.cube_green.get_position()[2] > self.cube_red.get_position()[2] and self.cube_blue.get_position()[2] > self.cube_green.get_position()[2])
         stack_red_blue_green = dist_three_cubes and (self.cube_red.get_position()[2] == 0.5345 and self.cube_blue.get_position()[2] > self.cube_red.get_position()[2] and self.cube_green.get_position()[2] > self.cube_blue.get_position()[2])
+        
 
         r = 0.0
         if stack_green_red:
@@ -69,6 +82,9 @@ class CubeSimpleExtEnv(Environment):
             r += 2.0
         elif stack_red_blue_green:
             r += 2.0
+        '''
+
+        r = 0.0
 
         return r
 

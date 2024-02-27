@@ -9,13 +9,15 @@ class CubeSimpleExtEnv(Environment):
 
     def __init__(self, **kwargs):
 
-        scene_file = 'Main/Scenes/Cubes_Simple_Task.ttt'
+        scene_file = 'Main/Scenes/Cubes_Shelf.ttt'
 
 
 
         self.cube_green: Shape | None = None
         self.cube_red: Shape | None = None
         self.cube_blue: Shape | None = None
+        self.shelf_1: Shape | None = None
+        self.shelf_2: Shape | None = None
 
         # Initialize parent class
         super().__init__("CubeExtStack", scene_file, **kwargs)
@@ -28,6 +30,17 @@ class CubeSimpleExtEnv(Environment):
         self._load_objects()
 
         r = 0.0
+
+        min_x, max_x, min_y, max_y, _, _ = self.shelf_1.get_bounding_box()
+
+        width = max_x - min_x
+        height = max_y - min_y
+
+        print(width)
+        print(height)
+
+        if 
+
 
         return r
 
@@ -58,6 +71,10 @@ class CubeSimpleExtEnv(Environment):
             self.cube_red = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Red"))
         if self.cube_blue is None:
             self.cube_blue = Shape(name_or_handle=sim.simGetObjectHandle("Cube_Blue"))
+        if self.shelf_1 is None:
+            self.shelf_1 = Shape(name_or_handle=sim.simGetObjectHandle("shelf1"))
+        if self.shelf_2 is None:
+            self.shelf_2 = Shape(name_or_handle=sim.simGetObjectHandle("shelf2"))
 
     def _get_collisions(self):
 

@@ -39,7 +39,9 @@ class CubeSimpleExtEnv(Environment):
 
         print(np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0))
         print(self.cube_green.get_position()[-1])
-        print(self.cube_red.get_position()[-1])
+        print(np.round(self.cube_red.get_position()[-1], 2))
+        print(np.round(self.cube_green.get_position()[-1], 2))
+        print(np.round(self.cube_blue.get_position()[-1], 2))
 
         stack_green_red = (np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0)
                            and (self.cube_green.get_position()[-1] == 0.5345 or self.cube_red.get_position()[-1] == 0.5345))

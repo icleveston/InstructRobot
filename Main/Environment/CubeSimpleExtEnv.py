@@ -44,11 +44,11 @@ class CubeSimpleExtEnv(Environment):
         print(np.round(self.cube_blue.get_position()[-1], 2))
 
         stack_green_red = (np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0)
-                           and (self.cube_green.get_position()[-1] == 0.5345 or self.cube_red.get_position()[-1] == 0.5345))
+                           and (self.cube_green.get_position()[-1] == 0.53 or self.cube_red.get_position()[-1] == 0.53))
         stack_green_blue = (np.allclose(self.cube_green.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
-                            and (self.cube_green.get_position()[-1] == 0.5345 or self.cube_blue.get_position()[-1] == 0.5345))
+                            and (self.cube_green.get_position()[-1] == 0.53 or self.cube_blue.get_position()[-1] == 0.53))
         stack_red_blue = (np.allclose(self.cube_red.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
-                          and (self.cube_red.get_position()[-1] == 0.5345 or self.cube_blue.get_position()[-1] == 0.5345))
+                          and (self.cube_red.get_position()[-1] == 0.53 or self.cube_blue.get_position()[-1] == 0.53))
 
 
         r = 0.0

@@ -37,10 +37,14 @@ class CubeSimpleExtEnv(Environment):
         height = max_y - min_y #altura
         depth = max_z - min_z #profundidade
 
+        print(np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0))
 
-        stack_green_red = np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0) and (self.cube_green.get_position()[-1] == 0.5345 or self.cube_red.get_position()[-1] == 0.5345)
-        stack_green_blue = np.allclose(self.cube_green.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0) and (self.cube_green.get_position()[-1] == 0.5345 or self.cube_blue.get_position()[-1] == 0.5345)
-        stack_red_blue = np.allclose(self.cube_red.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0) and (self.cube_red.get_position()[-1] == 0.5345 or self.cube_blue.get_position()[-1] == 0.5345)
+        stack_green_red = (np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0)
+                           and (self.cube_green.get_position()[-1] == 0.5345 or self.cube_red.get_position()[-1] == 0.5345))
+        stack_green_blue = (np.allclose(self.cube_green.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
+                            and (self.cube_green.get_position()[-1] == 0.5345 or self.cube_blue.get_position()[-1] == 0.5345))
+        stack_red_blue = (np.allclose(self.cube_red.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
+                          and (self.cube_red.get_position()[-1] == 0.5345 or self.cube_blue.get_position()[-1] == 0.5345))
 
 
         r = 0.0

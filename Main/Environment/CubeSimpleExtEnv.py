@@ -4,6 +4,7 @@ from .Environment import Environment
 from pyrep.backend import sim
 from pyrep.objects.shape import Shape
 import numpy as np
+from numpy import round
 
 
 
@@ -37,19 +38,19 @@ class CubeSimpleExtEnv(Environment):
         height = max_y - min_y #altura
         depth = max_z - min_z #profundidade
 
-        print(np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0))
-        print(self.cube_green.get_position()[-1])
-        print(np.round(self.cube_red.get_position()[-1], 2))
-        print(np.round(self.cube_green.get_position()[-1], 2))
-        print(np.round(self.cube_blue.get_position()[-1], 2))
+
+
 
         stack_green_red = (np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0)
-                           and (self.cube_green.get_position()[-1] == 0.53 or self.cube_red.get_position()[-1] == 0.53))
+                           and (round(self.cube_green.get_position()[-1],2) == 0.53 or round(self.cube_red.get_position()[-1],2) == 0.53))
         stack_green_blue = (np.allclose(self.cube_green.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
-                            and (self.cube_green.get_position()[-1] == 0.53 or self.cube_blue.get_position()[-1] == 0.53))
+                            and (round(self.cube_green.get_position()[-1],2) == 0.53 or round(self.cube_blue.get_position()[-1],2) == 0.53))
         stack_red_blue = (np.allclose(self.cube_red.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
-                          and (self.cube_red.get_position()[-1] == 0.53 or self.cube_blue.get_position()[-1] == 0.53))
+                          and (round(self.cube_red.get_position()[-1],2) == 0.53 or round(self.cube_blue.get_position()[-1],2) == 0.53))
 
+        print(stack_green_red)
+        print(stack_green_blue)
+        print(stack_red_blue)
 
         r = 0.0
         if stack_green_red:

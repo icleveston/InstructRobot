@@ -42,21 +42,21 @@ class CubeSimpleExtEnv(Environment):
 
 
         stack_green_red = (np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0)
-                           and ((round(self.cube_green.get_position()[-1],2) == 0.53 and round(self.cube_red.get_position()[-1],2) >= 0.53 + width) or
+                           and ((round(self.cube_green.get_position()[-1],2) == 0.53 and round(self.cube_red.get_position()[-1],2) >= 0.53 and round(self.cube_red.get_position()[-1],2) <= 0.53 + width + 0.01) or
                                 (round(self.cube_red.get_position()[-1], 2) == 0.53 and round(
-                                    self.cube_green.get_position()[-1], 2) >= 0.53 + width)
+                                    self.cube_green.get_position()[-1], 2) >= 0.53 and round(self.cube_green.get_position()[-1],2) <= 0.53 + width + 0.01)
                                 ))
         stack_green_blue = (np.allclose(self.cube_green.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
                             and ((round(self.cube_green.get_position()[-1], 2) == 0.53 and round(
-                    self.cube_blue.get_position()[-1], 2) >= 0.53 + width) or
+                    self.cube_blue.get_position()[-1], 2) >= 0.53 and round(self.cube_blue.get_position()[-1],2) <= 0.53 + width + 0.01) or
                                  (round(self.cube_blue.get_position()[-1], 2) == 0.53 and round(
-                                     self.cube_green.get_position()[-1], 2) >= 0.53 + width)
+                                     self.cube_green.get_position()[-1], 2) >= 0.53 and round(self.cube_green.get_position()[-1],2) <= 0.53 + width + 0.01)
                                  ))
         stack_red_blue = (np.allclose(self.cube_red.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
                           and ((round(self.cube_red.get_position()[-1], 2) == 0.53 and round(
-                    self.cube_blue.get_position()[-1], 2) >= 0.53 + width) or
+                    self.cube_blue.get_position()[-1], 2) >= 0.53 and round(self.cube_blue.get_position()[-1],2) <= 0.53 + width + 0.01) or
                                (round(self.cube_blue.get_position()[-1], 2) == 0.53 and round(
-                                   self.cube_red.get_position()[-1], 2) >= 0.53 + width)
+                                   self.cube_red.get_position()[-1], 2) >= 0.53 and round(self.cube_red.get_position()[-1],2) <= 0.53 + width + 0.01)
                                ))
 
         print(stack_green_red)

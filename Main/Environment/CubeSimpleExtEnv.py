@@ -37,7 +37,7 @@ class CubeSimpleExtEnv(Environment):
         cube_green_pos = round(self.cube_green.get_position(),4)
         cube_red_pos = round(self.cube_red.get_position(),4)
         cube_blue_pos = round(self.cube_blue.get_position(),4)
-        print(cube_green_pos)
+
         close_green_red = np.allclose(cube_green_pos, cube_red_pos, atol=width, rtol=0.0)
         close_green_blue = np.allclose(cube_green_pos, cube_blue_pos, atol=width, rtol=0.0)
         close_red_blue = np.allclose(cube_red_pos, cube_blue_pos, atol=width, rtol=0.0)

@@ -30,7 +30,7 @@ class CubeSimpleExtEnv(Environment):
     def reward(self):
         self._load_objects()
 
-        width = 0.08
+        width = 0.07
         table_height = 0.5345
         heigth_two_cubes = table_height + 0.09
 

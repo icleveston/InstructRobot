@@ -34,7 +34,7 @@ class TrainTask():
         self.model_intrinsic = model_intrinsic
 
         self.n_steps = 1_000_000
-        self.n_rollout = 12
+        self.n_rollout = 1
         self.n_trajectory = 32
         self.current_step = 0
         self.lr = 1e-4

@@ -30,38 +30,27 @@ class CubeSimpleExtEnv(Environment):
     def reward(self):
         self._load_objects()
 
-        # Obtenha as dimensões do objeto
-        dimensions = self.cube_green.get_bounding_box()
+        width = 0.09
+        table_height = 0.5345
+        heigth_two_cubes = table_height + width
 
-        min_x, max_x, min_y, max_y, min_z, max_z = dimensions
-        width = max_x - min_x #largura
-        height = max_y - min_y #altura
-        depth = max_z - min_z #profundidade
+        cube_green_pos = round(self.cube_green.get_position(),4)
+        cube_red_pos = round(self.cube_red.get_position(),4)
+        cube_blue_pos = round(self.cube_blue.get_position(),4)
 
+        close_green_red = np.allclose(cube_green_pos, cube_red_pos, atol=width, rtol=0.0)
+        close_green_blue = np.allclose(cube_green_pos, cube_blue_pos, atol=width, rtol=0.0)
+        close_red_blue = np.allclose(cube_red_pos, cube_blue_pos, atol=width, rtol=0.0)
 
+        stack_green_red = close_green_red and ((cube_green_pos[-1] == table_height and cube_red_pos[-1] >= table_height and cube_red_pos[-1] <= heigth_two_cubes) or
+                                (cube_red_pos[-1] == table_height and cube_green_pos[-1] >= table_height and cube_green_pos[-1] <= heigth_two_cubes))
+         
+        stack_green_blue = close_green_blue and ((cube_green_pos[-1] == table_height and cube_blue_pos[-1] >= table_height and cube_blue_pos[-1] <= heigth_two_cubes) or
+                                (cube_blue_pos[-1] == table_height and cube_green_pos[-1] >= table_height and cube_green_pos[-1] <= heigth_two_cubes))
 
+        stack_red_blue = close_red_blue and ((cube_red_pos[-1] == table_height and cube_blue_pos[-1] >= table_height and cube_blue_pos[-1] <= heigth_two_cubes) or
+                                (cube_blue_pos[-1] == table_height and cube_red_pos[-1] >= table_height and cube_red_pos[-1] <= heigth_two_cubes))
 
-        stack_green_red = (np.allclose(self.cube_green.get_position(), self.cube_red.get_position(), atol=width, rtol=0.0)
-                           and ((round(self.cube_green.get_position()[-1],2) == 0.53 and round(self.cube_red.get_position()[-1],2) >= 0.53 and round(self.cube_red.get_position()[-1],2) <= 0.53 + width + 0.01) or
-                                (round(self.cube_red.get_position()[-1], 2) == 0.53 and round(
-                                    self.cube_green.get_position()[-1], 2) >= 0.53 and round(self.cube_green.get_position()[-1],2) <= 0.53 + width + 0.01)
-                                ))
-        stack_green_blue = (np.allclose(self.cube_green.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
-                            and ((round(self.cube_green.get_position()[-1], 2) == 0.53 and round(
-                    self.cube_blue.get_position()[-1], 2) >= 0.53 and round(self.cube_blue.get_position()[-1],2) <= 0.53 + width + 0.01) or
-                                 (round(self.cube_blue.get_position()[-1], 2) == 0.53 and round(
-                                     self.cube_green.get_position()[-1], 2) >= 0.53 and round(self.cube_green.get_position()[-1],2) <= 0.53 + width + 0.01)
-                                 ))
-        stack_red_blue = (np.allclose(self.cube_red.get_position(), self.cube_blue.get_position(), atol=width, rtol=0.0)
-                          and ((round(self.cube_red.get_position()[-1], 2) == 0.53 and round(
-                    self.cube_blue.get_position()[-1], 2) >= 0.53 and round(self.cube_blue.get_position()[-1],2) <= 0.53 + width + 0.01) or
-                               (round(self.cube_blue.get_position()[-1], 2) == 0.53 and round(
-                                   self.cube_red.get_position()[-1], 2) >= 0.53 and round(self.cube_red.get_position()[-1],2) <= 0.53 + width + 0.01)
-                               ))
-
-        print(stack_green_red)
-        print(stack_green_blue)
-        print(stack_red_blue)
 
         r = 0.0
         if stack_green_red:

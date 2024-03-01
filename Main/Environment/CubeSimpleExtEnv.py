@@ -32,7 +32,7 @@ class CubeSimpleExtEnv(Environment):
 
         width = 0.07
         table_height = 0.5345
-        heigth_two_cubes = table_height + width
+        heigth_two_cubes = table_height + 0.09
 
         cube_green_pos = round(self.cube_green.get_position(),4)
         cube_red_pos = round(self.cube_red.get_position(),4)

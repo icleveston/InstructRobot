@@ -37,10 +37,10 @@ class CubeSimpleExtEnv(Environment):
         cube_green_pos = round(self.cube_green.get_position(),4)
         cube_red_pos = round(self.cube_red.get_position(),4)
         cube_blue_pos = round(self.cube_blue.get_position(),4)
-
-        close_green_red = np.allclose(cube_green_pos[0:1], cube_red_pos[0:1], atol=0.08, rtol=0.0)
-        close_green_blue = np.allclose(cube_green_pos[0:1], cube_blue_pos[0:1], atol=0.08, rtol=0.0)
-        close_red_blue = np.allclose(cube_red_pos[0:1], cube_blue_pos[0:1], atol=0.08, rtol=0.0)
+        print(cube_green_pos)
+        close_green_red = np.allclose(cube_green_pos, cube_red_pos, atol=width, rtol=0.0)
+        close_green_blue = np.allclose(cube_green_pos, cube_blue_pos, atol=width, rtol=0.0)
+        close_red_blue = np.allclose(cube_red_pos, cube_blue_pos, atol=width, rtol=0.0)
 
         stack_green_red = close_green_red and ((cube_green_pos[-1] == table_height and cube_red_pos[-1] >= table_height and cube_red_pos[-1] <= heigth_two_cubes) or
                                 (cube_red_pos[-1] == table_height and cube_green_pos[-1] >= table_height and cube_green_pos[-1] <= heigth_two_cubes))

@@ -33,6 +33,7 @@ class CubeSimpleExtEnv(Environment):
         width = 0.07
         table_height = 0.5345
         heigth_two_cubes = table_height + 0.09
+        heigth_three_cubes = table_height + 2*0.09
 
         cube_green_pos = round(self.cube_green.get_position(),4)
         cube_red_pos = round(self.cube_red.get_position(),4)
@@ -51,6 +52,8 @@ class CubeSimpleExtEnv(Environment):
         stack_red_blue = close_red_blue and ((cube_red_pos[-1] == table_height and cube_blue_pos[-1] >= table_height and cube_blue_pos[-1] <= heigth_two_cubes) or
                                 (cube_blue_pos[-1] == table_height and cube_red_pos[-1] >= table_height and cube_red_pos[-1] <= heigth_two_cubes))
 
+        sum_high_three_cubes = cube_green_pos[-1]+cube_red_pos[-1]+cube_blue_pos[-1]
+        stack_all = close_green_red and close_green_blue and close_red_blue and (sum_high_three_cubes > heigth_two_cubes and sum_high_three_cubes <= heigth_three_cubes)
 
         r = 0.0
         if stack_green_red:
@@ -59,6 +62,8 @@ class CubeSimpleExtEnv(Environment):
             r += 1.0
         elif stack_red_blue:
             r += 1.0
+        elif stack_all:
+            r += 2.0
 
         return r
 

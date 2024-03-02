@@ -33,7 +33,7 @@ class TrainTask():
         self.model_name = model_name
         self.model_intrinsic = model_intrinsic
 
-        self.n_steps = 230_000
+        self.n_steps = 3_000_000
         self.n_rollout = 12
         self.n_trajectory = 32
         self.current_step = 0

@@ -37,8 +37,7 @@ class CubeSimpleExtEnv(Environment):
         height = max_y - min_y
         depth = max_z - min_z
 
-        print(width)
-        print(height)
+
 
         pos_green_cube = round(self.cube_green.get_position(),4)
         pos_red_cube = round(self.cube_red.get_position(),4)

@@ -3,6 +3,8 @@ import math
 from .Environment import Environment
 from pyrep.backend import sim
 from pyrep.objects.shape import Shape
+import numpy as np
+from numpy import round, abs
 
 
 class CubeSimpleExtEnv(Environment):
@@ -29,18 +31,50 @@ class CubeSimpleExtEnv(Environment):
     def reward(self):
         self._load_objects()
 
-        r = 0.0
-
-        min_x, max_x, min_y, max_y, _, _ = self.shelf_1.get_bounding_box()
+        min_x, max_x, min_y, max_y, min_z, max_z = self.shelf_1.get_bounding_box()
 
         width = max_x - min_x
         height = max_y - min_y
+        depth = max_z - min_z
 
         print(width)
         print(height)
 
-        if 
+        pos_green_cube = round(self.cube_green.get_position(),4)
+        pos_red_cube = round(self.cube_red.get_position(),4)
+        pos_blue_cube = round(self.cube_blue.get_position(),4)
 
+        pos_shelf1 = round(self.shelf_1.get_position(), 4)
+        pos_shelf2 = round(self.shelf_2.get_position(), 4)
+
+        cube_green_shelf_1 = abs(pos_green_cube[0] - pos_shelf1[0]) < width/2 and abs(pos_green_cube[1] - pos_shelf1[1]) < height/2 and pos_green_cube[-1] >= pos_shelf1[-1] and pos_green_cube[-1] <= (pos_shelf1[-1] + depth/2)
+        cube_red_shelf_1 = abs(pos_red_cube[0] - pos_shelf1[0]) < width/2 and abs(pos_red_cube[1] - pos_shelf1[1]) < height/2 and pos_red_cube[-1] >= pos_shelf1[-1] and pos_red_cube[-1] <= (pos_shelf1[-1] + depth/2)
+        cube_blue_shelf_1 = abs(pos_blue_cube[0] - pos_shelf1[0]) < width/2 and abs(pos_blue_cube[1] - pos_shelf1[1]) < height/2 and pos_blue_cube[-1] >= pos_shelf1[-1] and pos_blue_cube[-1] <= (pos_shelf1[-1] + depth/2)
+
+        cube_green_shelf_2 = abs(pos_green_cube[0] - pos_shelf2[0]) < width / 2 and abs(
+            pos_green_cube[1] - pos_shelf2[1]) < height / 2 and pos_green_cube[-1] >= pos_shelf2[-1] and pos_green_cube[
+                                 -1] <= (pos_shelf2[-1] + depth / 2)
+        cube_red_shelf_2 = abs(pos_red_cube[0] - pos_shelf2[0]) < width / 2 and abs(
+            pos_red_cube[1] - pos_shelf2[1]) < height / 2 and pos_red_cube[-1] >= pos_shelf2[-1] and pos_red_cube[
+                               -1] <= (pos_shelf2[-1] + depth / 2)
+        cube_blue_shelf_2 = abs(pos_blue_cube[0] - pos_shelf2[0]) < width / 2 and abs(
+            pos_blue_cube[1] - pos_shelf2[1]) < height / 2 and pos_blue_cube[-1] >= pos_shelf2[-1] and pos_blue_cube[
+                                -1] <= (pos_shelf2[-1] + depth / 2)
+
+        r = 0.0
+
+        if cube_green_shelf_1:
+            r += 1.0
+        if cube_red_shelf_1:
+            r += 1.0
+        if cube_blue_shelf_1:
+            r += 1.0
+        if cube_green_shelf_2:
+            r += 1.0
+        if cube_red_shelf_2:
+            r += 1.0
+        if cube_blue_shelf_2:
+            r += 1.0
 
         return r
 

@@ -22,7 +22,7 @@ class CubeSimpleExtEnv(Environment):
         self.shelf_2: Shape | None = None
 
         # Initialize parent class
-        super().__init__("CubeExtStack", scene_file, **kwargs)
+        super().__init__("CubeShelf", scene_file, **kwargs)
 
 
     def configure(self) -> None:

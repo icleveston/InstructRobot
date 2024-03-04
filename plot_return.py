@@ -8,7 +8,7 @@ matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
 
-def plot(experiment_root_dir: str,
+def plot(experiments_root_dir: str,
          smooth: int,
          start_step: int,
          end_step: int,
@@ -17,49 +17,50 @@ def plot(experiment_root_dir: str,
          color: str,
          save_as: str) -> None:
 
-    # Create plot path if it does not exist
-    plot_path: str = os.path.join('out', experiment_root_dir, 'plot')
-    if not os.path.exists(plot_path):
-        os.makedirs(plot_path)
+    for filename in os.listdir(experiments_root_dir):
+        # Create plot path if it does not exist
+        plot_path: str = os.path.join('out', filename, 'plot')
+        if not os.path.exists(plot_path):
+            os.makedirs(plot_path)
 
-    # Load history csv
-    data = pd.read_csv(os.path.join('out', experiment_root_dir, 'info', 'history.csv'))
-    data = pd.DataFrame(data)
+        # Load history csv
+        data = pd.read_csv(os.path.join('out', filename, 'info', 'history.csv'))
+        data = pd.DataFrame(data)
 
-    # Change axis formatter
-    ax = matplotlib.pyplot.gca()
-    formatter = matplotlib.ticker.FuncFormatter(lambda x, pos: '%1.1fM' % (x * 1e-6) if x >= 1e6 else '%1dK' % (
-            x * 1e-3) if x >= 1e3 else '%1d' % x)
-    ax.xaxis.set_major_formatter(formatter)
+        # Change axis formatter
+        ax = matplotlib.pyplot.gca()
+        formatter = matplotlib.ticker.FuncFormatter(lambda x, pos: '%1.1fM' % (x * 1e-6) if x >= 1e6 else '%1dK' % (
+                x * 1e-3) if x >= 1e3 else '%1d' % x)
+        ax.xaxis.set_major_formatter(formatter)
 
-    if end_step == 0:
-        end_step = data["step"].values[-1]
+        if end_step == 0:
+            end_step = data["step"].values[-1]
 
-    # Filter start and end step
-    data = data[data["step"] >= start_step]
-    data = data[data["step"] < end_step]
+        # Filter start and end step
+        data = data[data["step"] >= start_step]
+        data = data[data["step"] < end_step]
 
-    # Set std limits
-    data['std_bottom'] = data["mean"] - data["std"]
-    data['std_top'] = data["mean"] + data["std"]
+        # Set std limits
+        data['std_bottom'] = data["mean"] - data["std"]
+        data['std_top'] = data["mean"] + data["std"]
 
-    if smooth > 0:
-        # Smooth mean and std
-        data['mean'] = data['mean'].rolling(window=smooth, win_type='triang',
-                                            min_periods=1).mean()
-        data['std_bottom'] = data['std_bottom'].rolling(window=smooth, win_type='triang',
-                                                        min_periods=1).mean()
-        data['std_top'] = data['std_top'].rolling(window=smooth, win_type='triang',
-                                                  min_periods=1).mean()
+        if smooth > 0:
+            # Smooth mean and std
+            data['mean'] = data['mean'].rolling(window=smooth, win_type='triang',
+                                                min_periods=1).mean()
+            data['std_bottom'] = data['std_bottom'].rolling(window=smooth, win_type='triang',
+                                                            min_periods=1).mean()
+            data['std_top'] = data['std_top'].rolling(window=smooth, win_type='triang',
+                                                      min_periods=1).mean()
 
-    # Plot data
-    plt.plot(data["step"], data["mean"], color=color, linewidth=1.5, alpha=1)
-    plt.fill_between(data["step"], data['std_bottom'], data['std_top'], color=color, linewidth=1,
-                     alpha=0.1)
+        # Plot data
+        plt.plot(data["step"], data["mean"], color=color, linewidth=1.5, alpha=1)
+        plt.fill_between(data["step"], data['std_bottom'], data['std_top'], color=color, linewidth=1,
+                         alpha=0.1)
 
-    # Configure figure
-    fig = plt.gcf()
-    fig.set_size_inches(width, height)
+        # Configure figure
+        fig = plt.gcf()
+        fig.set_size_inches(width, height)
 
     # Configure plot
     ax.grid(color='gray', linestyle='-', linewidth=1, alpha=0.2)
@@ -74,7 +75,7 @@ def plot(experiment_root_dir: str,
 
 def parse_arguments():
     arg = argparse.ArgumentParser()
-    arg.add_argument("--experiment-root-dir", type=str, required=True, help="Experiment root directory.")
+    arg.add_argument("--experiments-root-dir", action="append", required=True, help="Experiment root directory.")
     arg.add_argument("--smooth", type=int, default=0, required=False, help="Smooth plot.")
     arg.add_argument("--start-step", type=int, default=0, required=False, help="Start plot step.")
     arg.add_argument("--end-step", type=int, default=0, required=False, help="End plot step.")

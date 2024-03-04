@@ -62,6 +62,15 @@ class CubeSimpleExtEnv(Environment):
 
         r = 0.0
 
+        if pos_green_cube[-1] > 0.5400:
+            r += 1.0
+
+        if pos_red_cube[-1] > 0.5400:
+            r += 1.0
+
+        if pos_blue_cube[-1] > 0.5400:
+            r += 1.0
+
         if cube_green_shelf_1:
             r += 1.0
         if cube_red_shelf_1:

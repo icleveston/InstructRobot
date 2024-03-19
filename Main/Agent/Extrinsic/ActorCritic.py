@@ -35,20 +35,27 @@ class ActorCritic(nn.Module):
 
     def evaluate(self, state_vision, state_proprioception, action):
         hidden_actor = self.actor.actor_brims.init_hidden(bsz=self.n_rollout)
+        hidden_critic = self.critic.critic_brims.init_hidden(bsz=self.n_rollout)
         action_mean = torch.zeros(self.n_steps, self.action_dim).to(self.device)
+        state_value = torch.zeros(self.n_steps, 1).to(self.device)
         # Actor
         for step in range(self.n_trajectory):
             state_vision_b = [state_vision[id] for id in range(step, self.n_steps, self.n_trajectory)]
             state_vision_b = torch.stack(state_vision_b)
             state_proprioception_b = [state_proprioception[id] for id in range(step, self.n_steps, self.n_trajectory)]
             state_proprioception_b = torch.stack(state_proprioception_b)
+            # Actor
             action_mean_b, hidden_actor = self.actor(state_vision_b, state_proprioception_b, hidden_actor)
+            # Critic
+            state_value_b, hidden_critic = self.critic(state_vision_b, state_proprioception_b, hidden_critic)
 
             for id in range(self.n_rollout):
                 if step == 0:
                     action_mean[id * self.n_trajectory] = action_mean_b[id]
+                    state_value[id * self.n_trajectory] = state_value_b[id]
                 else:
                     action_mean[(id * self.n_trajectory) + step] = action_mean_b[id]
+                    state_value[(id * self.n_trajectory) + step] = state_value_b[id]
 
 
         action_var = self.action_var.expand_as(action_mean).to(self.device)
@@ -59,8 +66,7 @@ class ActorCritic(nn.Module):
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
 
-        # Critic
-        state_value = self.critic(state_vision, state_proprioception)
+
 
         return action_logprobs, torch.squeeze(state_value), dist_entropy
 
@@ -103,20 +109,22 @@ class Critic(nn.Module):
         self.critic_vision = ConvNet(9, 128)
         self.critic_proprioception = nn.Linear(3 * action_dim, 128)
 
-        self.critic = nn.Sequential(
+        self.critic_brims = Brims()
+
+        self.critic_output = nn.Sequential(
             nn.Tanh(),
-            nn.Linear(256, 128),
-            nn.Tanh(),
-            nn.Linear(128, 1)
+            nn.Linear(256, 1)
         )
 
-    def forward(self, state_vision, state_proprioception):
+    def forward(self, state_vision, state_proprioception, hidden_critic):
 
         x_vision_critic = self.critic_vision(state_vision)
         x_proprioception_critic = self.critic_proprioception(state_proprioception)
         x_critic = torch.cat((x_vision_critic, x_proprioception_critic), dim=1)
 
-        return self.critic(x_critic)
+        x, hidden_critic = self.critic_brims(x_critic, hidden_critic)
+        x = self.critic_output(x)
+        return x, hidden_critic
 
 
 class ConvNet(nn.Module):

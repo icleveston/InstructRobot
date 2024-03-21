@@ -9,7 +9,7 @@ from Utils import NormalizeInverse
 
 
 class Agent:
-    def __init__(self, env, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, device):
+    def __init__(self, env, action_dim, action_std, lr, betas, gamma, k_epochs, eps_clip, total_iters, n_rollout, n_trajectory, device):
         self.env = env
         self.lr = lr
         self.betas = betas
@@ -18,7 +18,7 @@ class Agent:
         self.k_epochs = k_epochs
         self.device = device
 
-        self.policy = ActorCritic(action_dim, action_std, self.env.env_min_values, self.env.env_max_values, self.device).to(self.device)
+        self.policy = ActorCritic(action_dim, action_std, self.env.env_min_values, self.env.env_max_values, n_rollout, n_trajectory, self.device).to(self.device)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
 
         self.scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -28,7 +28,7 @@ class Agent:
             total_iters=total_iters
         )
 
-        self.policy_old = ActorCritic(action_dim, action_std, self.env.env_min_values, self.env.env_max_values, self.device).to(self.device)
+        self.policy_old = ActorCritic(action_dim, action_std, self.env.env_min_values, self.env.env_max_values, n_rollout, n_trajectory, self.device).to(self.device)
         self.policy_old.load_state_dict(self.policy.state_dict())
 
         self.critic_loss: nn.MSELoss = nn.MSELoss()
@@ -39,7 +39,7 @@ class Agent:
             NormalizeInverse(self.env.env_mean_rgb, self.env.env_std_rgb),
         ])
 
-    def select_action(self, state):
+    def select_action(self, state, hidden_actor):
 
         state_vision = state[0]
         state_proprioception = state[1]
@@ -47,7 +47,10 @@ class Agent:
         state_vision = state_vision.unsqueeze(dim=0)
         state_proprioception = state_proprioception.unsqueeze(dim=0)
 
-        return self.policy_old.act(state_vision, state_proprioception)
+        return self.policy_old.act(state_vision, state_proprioception, hidden_actor)
+
+    def reset_memory_lstm(self):
+        return self.policy_old.actor.actor_brims.init_hidden(bsz=1)
 
     def predict_next_state(self, state, action):
 

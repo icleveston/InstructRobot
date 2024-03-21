@@ -91,6 +91,8 @@ class TrainIntrinsic():
             k_epochs=self.k_epochs,
             eps_clip=self.eps_clip,
             total_iters=self.n_steps // (self.n_rollout * self.n_trajectory),
+            n_rollout = self.n_rollout,
+            n_trajectory = self.n_trajectory,
             device=self.device
         )
 
@@ -117,7 +119,7 @@ class TrainIntrinsic():
 
                     # Get the first observation
                     old_observation = self.env.reset()
-
+                    hidden_actor = self.agent.reset_memory_lstm()
                     for j in range(self.n_trajectory):
                         # Save observations
                         observations[r].append(old_observation.copy())
@@ -126,10 +128,10 @@ class TrainIntrinsic():
                         state_flatten, _ = self._build_state_from_observations(old_observation)
 
                         # Select action from the agent
-                        action, logprob = self.agent.select_action(state_flatten)
+                        action, logprob, hidden_actor = self.agent.select_action(state_flatten, hidden_actor)
 
                         # Predict the next state
-                        state_pred = self.agent.predict_next_state(state_flatten, action)
+                        state_pred  = self.agent.predict_next_state(state_flatten, action)
 
                         # Execute action in the simulator
                         new_observation, ext_reward = self.env.step(action.squeeze().data.cpu().numpy())
